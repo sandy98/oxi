@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="static/img/oxi_1.png" alt="Oxi Logo" width="250px">
+  <img src="static/img/oxi_1.png" alt="Oxi Logo" width="125px">
 </p>
 
 <p align="center">
