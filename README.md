@@ -1,10 +1,8 @@
 <p align="center">
-  <img src="static/img/oxi_1.png" alt="Oxi Logo" width="125px" style="border-radius: 20px;">
+  <img src="static/img/oxi_1.png" alt="Oxi Logo" width="125px" />
 </p>
 
-<p align="center">
-  <h1>Oxi</h1>
-</p>
+<h1 align="center">Oxi</h1>
 
 ASGI Full Stack:
 
