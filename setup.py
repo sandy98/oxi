@@ -10,7 +10,7 @@ setup(
     long_description_content_type='text/markdown',
     author=__author__,
     author_email=__email__,
-    url='https://github.com/sandy98/pybase3',
+    url=__url__,
     packages=find_packages(),
     classifiers=[
         'Programming Language :: Python :: 3',
