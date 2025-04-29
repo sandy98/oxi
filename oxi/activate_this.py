@@ -12,7 +12,7 @@ try:
     print("Activating virtualenv...")
 
     # Path to the virtual environment
-    oxi_path = Path(os.path.abspath(__file__)).parent.parent.parent
+    oxi_path = Path(os.path.abspath(__file__)).parent.parent
 
     # Update sys.path to include oxi path
     sys.path.insert(0, str(oxi_path))

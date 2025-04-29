@@ -10,7 +10,6 @@ oxi_env = False
 
 try:
     print("Activating virtualenv...")
-    # exec(open(activate_this).read(), dict(__file__=activate_this))
 
     # Path to the virtual environment
     oxi_path = Path(os.path.abspath(__file__)).parent.parent.parent

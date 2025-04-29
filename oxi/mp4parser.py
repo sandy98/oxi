@@ -6,10 +6,7 @@
 import os, mmap, io
 from mimetypes import guess_type
 import argparse #, copy
-try:
-    from tina import __version__ as tina_version
-except:
-    from __init__ import __version__ as tina_version
+from . import __version__ as oxi_version
        
 class Smmap:
     def __init__(self, fileno, offset:int = 0, limit:int =  0):
@@ -436,7 +433,7 @@ Size: {self.filesize:,}
     
 def main():
     parser = argparse.ArgumentParser(description='Command line arguments for Mp4Parser', prog='mp4parser')
-    parser.add_argument('-V', '--version', action='version', version=f"{parser.prog} v {tina_version}", help=f"Shows {parser.prog} version and exits.")
+    parser.add_argument('-V', '--version', action='version', version=f"{parser.prog} v {oxi_version}", help=f"Shows {parser.prog} version and exits.")
     parser.add_argument('inputfile', type=str, help="Name of the file to be listed/processed.")
     parser.add_argument('-o', '--outputfile', type=str, default='out.mp4', help="Name of the file you wish to save to. Defaults to 'out.mp4'")
     group = parser.add_mutually_exclusive_group(required=False)

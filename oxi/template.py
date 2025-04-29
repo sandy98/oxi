@@ -6,21 +6,11 @@ import xml.etree.ElementTree as ET
 from xml.dom import minidom
 from html.parser import HTMLParser
 
+from . import __version__ as oxi_version
+from .utils import SmartDict, aopen, dual_mode
+from .server import OxiProtocol
 
-try:
-    from tina.tinaserver import TinaHandler
-    from tina.utils import SmartDict, aopen
-except:
-    try:
-        from tinaserver import TinaHandler
-        from utils import SmartDict, aopen
-    except:
-        print("Error importing local modules in template.py")
-        os.sys.exit(-1)
-try:
-    from tina import __version__ as tina_version
-except:
-    from __init__ import __version__ as tina_version
+oxi_version
        
 #############################################################################################################################
 
@@ -604,7 +594,7 @@ TemplateLight.template_filters['lower'] = str.lower
 TemplateLight.template_filters['toJson'] = lambda x: json.dumps(x, ensure_ascii=False)
 
 def get_template_dir():
-    templates_root = TinaHandler.config.get(
+    templates_root = OxiProtocol.config.get(
         'template-dir', 'templates')
     return os.path.join(os.getcwd(), templates_root)
 
@@ -810,8 +800,8 @@ def swiss_army_knife(records, **kwargs):
 
 def test1():
     import asyncio
-    from tinaserver import run_dev_server
-    from tinapp import TinApp
+    from server import run_dev_server
+    from app import OxiApp
 
     head = Head("Tina Demo App")
     head.add_item('script', '<script>console.clear(); console.info("Tina Demo App loaded.");</script>')
@@ -825,7 +815,7 @@ def test1():
     menubar.mB = '#808080'
     htmlApp = HTMLApp(head=head, body=Body(menubar))
 
-    app = TinApp()
+    app = OxiApp()
 
     @app.get('/')
     async def home():

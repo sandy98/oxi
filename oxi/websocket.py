@@ -3,11 +3,10 @@
 import typing, json, asyncio
 from time import time, strftime
 from uuid import uuid4
-try:
-    from tina import __version__ as tina_version
-except:
-    from __init__ import __version__ as tina_version
-       
+from . import __version__ as oxi_version
+
+oxi_version
+
 CONNECTING = 0
 CONNECTED = 1
 DISCONNECTED = 2
