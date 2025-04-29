@@ -1,6 +1,41 @@
 #-*- coding: utf-8 -*-
-import re, asyncio
+import re, asyncio, platform
 from functools import wraps
+
+def is_windows():
+    """
+    Check if the current operating system is Windows.
+    """
+    return platform.system() == 'Windows'
+
+def is_linux():
+    """
+    Check if the current operating system is Linux.
+    """
+    return platform.system() == 'Linux'
+
+def is_mac():
+    """
+    Check if the current operating system is macOS.
+    """
+    return platform.system() == 'Darwin'
+def is_unix():
+    """
+    Check if the current operating system is Unix-like.
+    """
+    return platform.system() in ['Linux', 'Darwin']
+
+def is_posix():
+    """
+    Check if the current operating system is POSIX-compliant.
+    """
+    return os.name == 'posix'
+
+def is_nt():
+    """
+    Check if the current operating system is Windows NT.
+    """
+    return os.name == 'nt'
 
 
 ######################################################################################
