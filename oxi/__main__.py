@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 
-from .response import response
+from . import  __version__ as version
 
 def main():
-    print(f"Answer to all is: {response}")
+    print(f"Oxi v.{version}")
 
 if __name__ == "__main__":
     main()

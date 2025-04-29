@@ -1,1 +1,5 @@
+.vscode/
+.idea/
 legacy/
+oxi/__pycache__/
+setup.sh
