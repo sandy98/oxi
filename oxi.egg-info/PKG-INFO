@@ -1,0 +1,32 @@
+Metadata-Version: 2.1
+Name: oxi
+Version: 0.1.0
+Summary: A simple library to read and write dbase III files.
+Home-page: https://github.com/sandy98/pybase3
+Author: Domingo E. Savoretti
+Author-email: esavoretti@gmail.com
+License: MIT
+Platform: UNKNOWN
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+License-File: LICENSE
+
+<p align="center">
+  <img src="static/img/oxi_1_rounded.jpg" alt="Oxi Logo" width="125px" />
+</p>
+
+<h1 align="center">Oxi</h1>
+
+ASGI Full Stack:
+
+* Web Server
+* Web App
+
+...and yes, Oxi is a cutie faithful dog!
+
+Coming soon...
+
+

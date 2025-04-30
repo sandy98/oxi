@@ -1,1 +1,1 @@
-python -c "from pybase3 import __version__ as version; print(version)"
+python -c "from oxi import __version__ as version; print(version)"
