@@ -40,6 +40,18 @@ def is_nt():
 
 ######################################################################################
 
+def to_bytes(text, encoding='utf-8'): 
+    if type(text) == bytes:
+        return text
+    elif type(text) == int or type(text) == float:
+        return str(text).encode(encoding)
+    elif isinstance(text, (tuple, list)):
+        return list(map(to_bytes, text))
+    else:
+        return str(text).encode(encoding)
+
+######################################################################################
+
 def safe_filename(name):
     name = name.replace(' ', '_')
     return re.sub(r'[^a-zA-Z0-9._-]', '', name)

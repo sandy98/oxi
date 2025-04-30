@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
 
+import asyncio
+
 from . import  __version__ as version
 
-def main():
-    print(f"Oxi v.{version}")
+from .server import main
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
 
 
 

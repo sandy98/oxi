@@ -6,6 +6,8 @@ __license__ = "MIT"
 __url__ = "https://github.com/sandy98/pybase3"
 __description__ = "A simple library to read and write dbase III files."
 __copyright__ = "Copyright (c) 2025 Domingo E. Savoretti"
+__oxi_port__ = 8086
+__oxi_host__ = "0.0.0.0"
 
 __all__ = [
     "utils",
