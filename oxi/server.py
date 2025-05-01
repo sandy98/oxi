@@ -1,17 +1,17 @@
 # -*- coding: utf-8 -*-
 
-import asyncio, os, random, subprocess, re, mimetypes
+import asyncio, os, random, subprocess, re, mimetypes, errno
 from typing import Callable
 
 try:
     from . import  __version__ as oxi_version, __oxi_port__ as oxi_port, __oxi_host__ as oxi_host
-    from .utils import dual_mode, is_windows, is_linux, is_unix
+    from .utils import is_windows, is_linux, is_mac
 except ImportError:
     from activate_this import oxi_env
     if not oxi_env:
         raise ImportError("Oxi environment not activated. Please activate the virtual environment.")
     from oxi import  __version__ as oxi_version, __oxi_port__ as oxi_port, __oxi_host__ as oxi_host
-    from oxi.utils import dual_mode, is_linux, is_windows, is_unix
+    from oxi.utils import is_linux, is_windows, is_mac
 
 async def is_static(resource:str) -> bool:
     """
@@ -38,7 +38,7 @@ async def is_exe(resource:str) -> bool:
     Check if the resource is an executable file.
     """
     exists = await asyncio.to_thread(os.path.exists, resource)
-    return exists and await asyncio.to_thread(os.access, resource, os.X_OK)
+    return exists and (await asyncio.to_thread(os.access, resource, os.X_OK))
 
 async def is_cgi_exe(resource:str, cgi_dir:str="cig-bin") -> bool:
     """
@@ -47,12 +47,25 @@ async def is_cgi_exe(resource:str, cgi_dir:str="cig-bin") -> bool:
     exists = await asyncio.to_thread(os.path.exists, resource)
     if not exists:
         return False
-    is_exe = await is_exe(resource)
-    if not is_exe:
+    is_exec = await is_exe(resource)
+    if not is_exec:
         return False
     if not cgi_dir in resource:
         return False
     return True
+
+async def finalize_writer(writer):
+    try:
+        # writer.write(b"\r\n\r\n")
+        await writer.drain()
+    except Exception as e:
+        print(f"Writer drain error: {e}")
+    finally:
+        try:
+            writer.close()
+            await writer.wait_closed()
+        except Exception as e:
+            print(f"Writer close error: {e}")
 
 enctypes: tuple = (b"application/x-www-form-urlencoded", 
                    b"multipart/form-data", 
@@ -131,18 +144,21 @@ class ProtocolFactory:
     def full_base_dir(self) -> str:
         return f"{os.getcwd()}{self.base_dir}"
 
-    def __init__(self, app: Callable = None, *, base_dir: str = 'static'):
+    def __init__(self, app: Callable = None, *, base_dir: str = 'static',
+                 cgi_dir: str = 'cgi-bin', chunk_size: int = 8192):
         self.app = app
         if self.app:
             self.app._protocol = self
 
         self._base_dir = base_dir
+        self.cgi_dir = cgi_dir
         self.version = oxi_version
         self.zen = zen
         self.original_zen = original_zen
         self.strftemplate = strftime_template
         self.enctypes = enctypes
         self.cgi_dir = "cgi-bin"
+        self.chunk_size = chunk_size
 
     async def __call__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         """
@@ -155,16 +171,9 @@ class ProtocolFactory:
             return await self.send_response(writer, status_code=400, reason="Bad Request", msg=str(e))
         print(f"Received request: {method} {path} {protocol}")
         if method not in ["HEAD", "GET", "POST", "PUT", "PATCH", "DELETE"]:
-            print(f"Method {method} not allowed.")
-            writer.write(self.not_found_line.encode("utf-8"))
-            writer.write(b"Content-Type: text/plain\r\n")
-            response = b"405 Method Not Allowed\r\n\r\n"
-            writer.write(f"Content-Length: {len(response)}\r\n\r\n".encode("utf-8"))
-            writer.write(response)
-            await writer.drain()
-            writer.close()
-            await writer.wait_closed()
-            return
+            msg = f"Method {method} not allowed."
+            print(msg)
+            return await self.send_response(writer, status_code=405, reason="Method Not Allowed", msg=msg)
  
         if method == "GET":
             if path == "/oxiserver_demo":
@@ -173,28 +182,91 @@ class ProtocolFactory:
             else:
                 fullpath = os.path.join(self.full_base_dir, path.lstrip("/").replace("/", os.path.sep)) 
                 if await is_file(fullpath):
-                    print(f"Serving file: {fullpath}")
-                    return await self.send_file(writer=writer, fullpath=fullpath)
+                    if not await is_cgi_exe(fullpath, self.cgi_dir):
+                        print(f"Serving file: {fullpath}")
+                        return await self.send_file(writer=writer, fullpath=fullpath)
+                    else:
+                        print(f"Serving CGI executable: {fullpath}")
+                        return await self.send_file(writer=writer, fullpath=fullpath)
+                elif await is_dir(fullpath):
+                    print(f"Serving directory: {fullpath}")
+                    return await self.send_response(writer=writer, status_code=403, reason="Forbidden", msg="Directory listing not allowed.")
                 else:
-                    print(f"File not found: {path}")
-                    return await self.send_response(writer=writer, status_code=404, reason="Not Found", msg=f"File '{path}' not found.")  
+                    if self.app is not None:
+                        print(f"Serving app: {self.app.name}")
+                        return await self.app(reader=reader, writer=writer)
+                    else:
+                        print(f"File {path} not found.")
+                        return await self.send_response(writer=writer, status_code=404, reason="Not Found", msg=f"Resource '{path}' not found.")  
             
     async def send_file(self, writer: asyncio.StreamWriter, fullpath: str) -> None:
-        with open(fullpath, "rb") as f:
-            data = f.read()
-        content_length = len(data)
-        mimetype = mimetypes.guess_type(fullpath)[0]
-        content_type = mimetype or "application/octet-stream"
-        writer.write(self.success_line.encode("utf-8"))
-        writer.write(f"Content-Type: {content_type}\r\n".encode("utf-8"))
-        writer.write(f"Content-Length: {content_length}\r\n".encode("utf-8"))
-        writer.write(b"\r\n")
-        await writer.drain()
-        writer.write(data)
-        await writer.drain()
-        writer.close()
-        await writer.wait_closed()
 
+        file_desc = await asyncio.to_thread(os.open, fullpath, os.O_RDONLY | os.O_NONBLOCK)
+        file_stat = await asyncio.to_thread(os.fstat, file_desc)
+        body_len = file_stat.st_size
+        content_type = mimetypes.guess_type(fullpath)[0] or "application/octet-stream"
+        try:
+            writer.write(self.success_line.encode("utf-8"))
+            writer.write(f"Content-Type: {content_type}\r\n".encode("utf-8"))
+            writer.write(f"Content-Length: {body_len}\r\n".encode("utf-8"))
+            writer.write(b"\r\n")
+            await writer.drain()
+        except Exception as e:
+            print(f"Error writing headers: {e}")
+            await asyncio.to_thread(os.close, file_desc)
+            # return await self.send_response(writer=writer, status_code=500, reason="Internal Server Error", msg=str(e))
+            return
+        
+        async def send_windows():
+            remaining = body_len
+            while remaining > 0:
+                chunk = min(self.chunk_size, remaining)
+                try:
+                    data = os.read(file_desc, chunk)
+                    if not data:
+                        break
+                    writer.write(data)
+                    await writer.drain()
+                    remaining -= len(data)
+                except BlockingIOError as e:
+                    if e.errno == errno.EAGAIN:
+                        await asyncio.sleep(0)
+                        continue
+            await asyncio.to_thread(os.close, file_desc)
+            await finalize_writer(writer)
+
+        async def send_linux():
+            loop = asyncio.get_running_loop()
+            try:
+                file_obj = open(file_desc, "rb", closefd=False)
+                await loop.sendfile(writer.transport, file_obj)
+            except (AttributeError, NotImplementedError, RuntimeError) as e:
+                print(f"loop.sendfile() not available or failed ({e}), falling back to read/write")
+                return await send_windows()
+            await asyncio.to_thread(os.close, file_desc)
+            await finalize_writer(writer)
+
+        async def send_mac():
+            sock = writer.get_extra_info("socket")
+            sock_fd = sock.fileno() 
+            offset = 0
+            while offset < body_len:
+                sent = os.sendfile(sock_fd, file_desc, offset, body_len - offset)
+                if sent == 0:
+                    break
+                offset += sent
+            await asyncio.to_thread(os.close, file_desc)
+            await finalize_writer(writer)
+
+        if is_windows():
+            return await send_windows()
+        
+        if is_linux():
+            return await send_linux()
+        
+        if is_mac():
+            return await send_mac()
+        
     async def get_request_line(self, reader: asyncio.StreamReader) -> tuple[str]:
         """
         Read the request line from the client.
