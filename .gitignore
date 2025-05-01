@@ -1,5 +1,14 @@
 .vscode/
 .idea/
 legacy/
+build/
+dist/
+oxi.egg-info/
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.egg-info/
+*.egg
 oxi/__pycache__/
 setup.sh
