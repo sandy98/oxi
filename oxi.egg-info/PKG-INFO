@@ -1,8 +1,8 @@
 Metadata-Version: 2.1
 Name: oxi
-Version: 0.1.0
+Version: 0.1.1
 Summary: A simple library to read and write dbase III files.
-Home-page: https://github.com/sandy98/pybase3
+Home-page: https://github.com/sandy98/oxi
 Author: Domingo E. Savoretti
 Author-email: esavoretti@gmail.com
 License: MIT
