@@ -321,7 +321,9 @@ class ProtocolFactory:
         if not exists:
             msg = "Static directory not found. Please create a static directory with images."
             return await self.send_response(writer=writer, status_code=404, reason="Not Found", msg=msg)
-        img_src = random.choice(os.listdir("./static/img"))
+        listdir = await asyncio.to_thread(os.listdir, "./static/img")
+        listdir = [entry for entry in listdir if mimetypes.guess_type(entry)[0] and mimetypes.guess_type(entry)[0].startswith("image")]
+        img_src = random.choice(listdir)
         newzen = random.choice([self.zen, self.original_zen]).replace("\n", "<br>")
         html = f"""
         <html>

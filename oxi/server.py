@@ -5,13 +5,15 @@ from typing import Callable
 
 try:
     from . import  __version__ as oxi_version, __oxi_port__ as oxi_port, __oxi_host__ as oxi_host
-    from .utils import is_windows, is_linux, is_mac
+    from .utils import is_windows, is_linux, is_mac, to_bytes
+    from .config import Config
 except ImportError:
     from activate_this import oxi_env
     if not oxi_env:
         raise ImportError("Oxi environment not activated. Please activate the virtual environment.")
     from oxi import  __version__ as oxi_version, __oxi_port__ as oxi_port, __oxi_host__ as oxi_host
     from oxi.utils import is_linux, is_windows, is_mac
+    from oxi.config import Config
 
 async def is_static(resource:str) -> bool:
     """
@@ -144,21 +146,19 @@ class ProtocolFactory:
     def full_base_dir(self) -> str:
         return f"{os.getcwd()}{self.base_dir}"
 
-    def __init__(self, app: Callable = None, *, base_dir: str = 'static',
-                 cgi_dir: str = 'cgi-bin', chunk_size: int = 8192):
+    def __init__(self, app: Callable = None, *, base_dir: str = None):
         self.app = app
         if self.app:
             self.app._protocol = self
 
-        self._base_dir = base_dir
-        self.cgi_dir = cgi_dir
+        for k in Config.keys():
+            setattr(self, k, Config[k])
+        self._base_dir = base_dir or self.static_dir
         self.version = oxi_version
         self.zen = zen
         self.original_zen = original_zen
         self.strftemplate = strftime_template
         self.enctypes = enctypes
-        self.cgi_dir = "cgi-bin"
-        self.chunk_size = chunk_size
 
     async def __call__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         """
@@ -271,9 +271,23 @@ class ProtocolFactory:
         """
         Read the request line from the client.
         """
-        request_line = await reader.readuntil(b"\r\n")
+        retries = 0
+        max_retries = 3
+        while True:
+            try:
+                request_line = await reader.readuntil(b"\r\n")
+                break
+            except asyncio.IncompleteReadError as e:
+                retries += 1
+                print(f"Retrying to read request line: {e}\nAttempt {retries}/{max_retries}")
+                if retries >= max_retries:
+                    request_line = ''
+                    break
+                else:
+                    asyncio.sleep(0)
+                    continue
         if not request_line:
-            raise ValueError("Request line is empty.")
+            raise ValueError("Request line is incomplete after multiple attempts.")
         request_line = request_line.rstrip(b"\r\n")
         if not request_line:
             raise ValueError("Request line is empty after stripping.")
@@ -324,7 +338,7 @@ class ProtocolFactory:
         listdir = await asyncio.to_thread(os.listdir, "./static/img")
         listdir = [entry for entry in listdir if mimetypes.guess_type(entry)[0] and mimetypes.guess_type(entry)[0].startswith("image")]
         img_src = random.choice(listdir)
-        newzen = random.choice([self.zen, self.original_zen]).replace("\n", "<br>")
+        newzen = random.choice([self.zen, self.zen, self.zen, self.original_zen]).replace("\n", "<br>")
         html = f"""
         <html>
             <head>
