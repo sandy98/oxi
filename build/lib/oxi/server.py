@@ -518,8 +518,10 @@ async def run_dev_server(protocol: Callable = ProtocolFactory(), host:str=oxi_ho
             print("\n Oxi Server closed")
 
 async def main():
-    protocol = ProtocolFactory(base_dir='')
-    await run_dev_server(protocol, host=oxi_host, port=oxi_port)
+    # protocol = ProtocolFactory()
+    # protocol.allow_dirlisting = False
+    # await run_dev_server(protocol, host=oxi_host, port=oxi_port)
+    await run_dev_server(host=oxi_host, port=oxi_port) # Uses ProtocolFactory() by default
 
 if __name__ == "__main__":
     asyncio.run(main())
