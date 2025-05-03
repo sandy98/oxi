@@ -1,6 +1,9 @@
 #-*- coding: utf-8 -*-
 import re, asyncio, platform
 from functools import wraps
+from http import HTTPStatus
+
+http_status_dict = {h.value: h.phrase for h in HTTPStatus}
 
 def is_windows():
     """

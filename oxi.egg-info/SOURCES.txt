@@ -5,6 +5,7 @@ oxi/__init__.py
 oxi/__main__.py
 oxi/activate_this.py
 oxi/app.py
+oxi/config.py
 oxi/mp4parser.py
 oxi/server.py
 oxi/template.py

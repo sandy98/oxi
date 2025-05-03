@@ -10,7 +10,8 @@ Config = {
     'cgi_dir': 'cgi-bin',
     'allow_dirlisting': True,
     'allow_cgi': True,
-    'chunk_size': 8192
+    'chunk_size': 8192,
+    'index_files': ['index.html', 'index.htm'],
 }
 
 if os.path.exists('config.json'):

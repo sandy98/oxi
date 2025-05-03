@@ -2,17 +2,20 @@
 
 import asyncio, os, random, subprocess, re, mimetypes, errno
 from typing import Callable
+from pathlib import Path
 
 try:
     from . import  __version__ as oxi_version, __oxi_port__ as oxi_port, __oxi_host__ as oxi_host
-    from .utils import is_windows, is_linux, is_mac, to_bytes
+    from .utils import (is_windows, is_linux, is_mac, 
+                        http_status_dict as status_dict, to_bytes)
     from .config import Config
 except ImportError:
     from activate_this import oxi_env
     if not oxi_env:
         raise ImportError("Oxi environment not activated. Please activate the virtual environment.")
     from oxi import  __version__ as oxi_version, __oxi_port__ as oxi_port, __oxi_host__ as oxi_host
-    from oxi.utils import is_linux, is_windows, is_mac
+    from oxi.utils import (is_linux, is_windows, is_mac, 
+                           http_status_dict as status_dict, to_bytes)
     from oxi.config import Config
 
 async def is_static(resource:str) -> bool:
@@ -144,16 +147,26 @@ class ProtocolFactory:
 
     @property
     def full_base_dir(self) -> str:
-        return f"{os.getcwd()}{self.base_dir}"
+        return f"{self.cwd}{self.base_dir}"
 
+    async def has_index(self):
+        candidates = self.index_files if hasattr(self, 'index_files') else ['index.html', 'index.htm']
+        full_candidates = [os.path.join(self.full_base_dir, f) for f in candidates]
+        for candidate in full_candidates:
+            if await is_file(candidate):
+                return True, candidate
+        return False, None
+    
     def __init__(self, app: Callable = None, *, base_dir: str = None):
         self.app = app
         if self.app:
             self.app._protocol = self
+        self.cwd = os.getcwd()
 
         for k in Config.keys():
             setattr(self, k, Config[k])
-        self._base_dir = base_dir or self.static_dir
+        
+        self._base_dir = base_dir or (self.static_dir if hasattr(self, 'static_dir') else 'static')
         self.version = oxi_version
         self.zen = zen
         self.original_zen = original_zen
@@ -168,37 +181,150 @@ class ProtocolFactory:
             method, path, protocol = await self.get_request_line(reader)
         except ValueError as e:
             print(f"Error parsing request line: {e}")
-            return await self.send_response(writer, status_code=400, reason="Bad Request", msg=str(e))
+            return await self.send_status_response(writer, status_code=400, msg=str(e))
         print(f"Received request: {method} {path} {protocol}")
         if method not in ["HEAD", "GET", "POST", "PUT", "PATCH", "DELETE"]:
             msg = f"Method {method} not allowed."
             print(msg)
-            return await self.send_response(writer, status_code=405, reason="Method Not Allowed", msg=msg)
+            return await self.send_status_response(writer, status_code=405, msg=msg)
  
-        if method == "GET":
-            if path == "/oxiserver_demo":
-                print(f"Serving Oxi Server demo page.")
-                return await self.oxiserver_demo(writer=writer)
-            else:
-                fullpath = os.path.join(self.full_base_dir, path.lstrip("/").replace("/", os.path.sep)) 
-                if await is_file(fullpath):
-                    if not await is_cgi_exe(fullpath, self.cgi_dir):
+        if path == "/oxiserver_demo" and method == "GET":
+            print(f"Serving Oxi Server demo page.")
+            return await self.oxiserver_demo(writer=writer)
+        else:
+            fullpath = os.path.join(self.full_base_dir, path.lstrip("/").replace("/", os.path.sep)) 
+            if await is_file(fullpath):
+                if not await is_cgi_exe(fullpath, self.cgi_dir):
+                    if method == "GET":
                         print(f"Serving file: {fullpath}")
                         return await self.send_file(writer=writer, fullpath=fullpath)
                     else:
-                        print(f"Serving CGI executable: {fullpath}")
-                        return await self.send_file(writer=writer, fullpath=fullpath)
-                elif await is_dir(fullpath):
-                    print(f"Serving directory: {fullpath}")
-                    return await self.send_response(writer=writer, status_code=403, reason="Forbidden", msg="Directory listing not allowed.")
+                        print(f"Method {method} not allowed for file: {fullpath}")
+                        return await self.send_status_response(writer, status_code=405, msg=f"Method {method} not allowed for file.")  
                 else:
-                    if self.app is not None:
-                        print(f"Serving app: {self.app.name}")
-                        return await self.app(reader=reader, writer=writer)
-                    else:
-                        print(f"File {path} not found.")
-                        return await self.send_response(writer=writer, status_code=404, reason="Not Found", msg=f"Resource '{path}' not found.")  
-            
+                    print(f"Serving CGI executable: {fullpath}")
+                    return await self.send_file(writer=writer, fullpath=fullpath)
+            elif path == "/":
+                exists, index_file = await self.has_index()
+                if exists:
+                    print(f"Serving index file: {index_file}")
+                    return await self.send_file(writer=writer, fullpath=index_file)
+                else:
+                    if not self.allow_dirlisting:
+                        print(f"Directory listing not allowed: {fullpath}")
+                        return await self.send_status_response(writer, status_code=403, msg="Directory listing not allowed.")
+                    print(f"Serving static directory: {self.static_dir}")
+                    return await self.send_directory(writer, path=path, dirpath=self.full_base_dir)
+            elif await is_dir(fullpath):
+                if not self.allow_dirlisting:
+                    print(f"Directory listing not allowed: {fullpath}")
+                    return await self.send_status_response(writer, status_code=403, msg="Directory listing not allowed.")
+                print(f"Serving directory: {fullpath}")
+                return await self.send_directory(writer, path=path, dirpath=fullpath)
+            else:
+                if self.app is not None:
+                    print(f"Serving app: {self.app.name}")
+                    return await self.app(reader=reader, writer=writer)
+                else:
+                    print(f"File {path} not found.")
+                    return await self.send_status_response(writer, status_code=404, msg=f"Resource '{path}' not found.")  
+
+    async def send_directory(self, writer: asyncio.StreamWriter, path: str, dirpath: str):
+        
+        async def get_file_details(entry):
+            fullpath = dirpath + os.path.sep + entry
+            size = await asyncio.to_thread(os.path.getsize,fullpath)
+            ret = f'<span style="text-align: right;" class="black">{size:,} bytes.</span>'
+            return ret
+        
+        pth = Path(path.strip('/'))
+        prevdir = ("/" + str(pth.parent)) if path != '/' else '/'
+        body = f"""
+            <!DOCTYPE html>
+            <html><head><title>Directory Listing</title>
+            <style>
+                body {{
+                    background-color: #f0f0f0;
+                    font-family: Helvetica, Arial, sans-serif;
+                    font-size: 16px;
+                }}
+                .green {{
+                    color: green;
+                }}
+                .silver {{
+                    color: silver;
+                }}
+                .black {{
+                    color: black;
+                }}
+                .renglon_dirlist {{
+                    margin-left: 1em;
+                    width: 33%;
+                    max-width: 33%;
+                    display: flex;
+                    flex-direction: row;
+                    justify-content: space-between;
+                    align-items: center;
+                    list-style-type: none;
+                    font-size: 150%;
+                    margin-bottom: 0.5em;
+                }}
+                a.link {{
+                    text-decoration: none;
+                    color: steelblue;
+                    font-weight: bold;
+                }}
+                a.link:hover {{
+                    color: black;
+                }}
+                @media (max-width: 798px) {{
+                    .renglon_dirlist {{
+                        width: 90%;    
+                        max-width: 90%;
+                    }}
+                }}
+            </style>
+            </head><body style="margin-left: 1em; margin-right: 1em;">
+            <h2>Directory listing for <span class="green">.{str(path)}</span></h2></hr>
+            <hr>
+            <p style="margin-bottom: 1em; text-align: center; font-family: Times New Roman; font-size: 16px;">Oxi/{oxi_version}</p>
+            <hr>
+            <ul>
+                <li class="renglon_dirlist"><a class="link" title="Home" href="/">.</a></li>
+                <li class="renglon_dirlist"><a class="link" title="{str(prevdir)}" href="{str(prevdir)}">..</a></li>
+        """
+        entries = await asyncio.to_thread(os.listdir, dirpath)
+        entries.sort()
+        entries.sort(key=lambda e: os.path.isdir(dirpath + os.path.sep + e), reverse=True)
+        for entry in entries:
+            body += f'''
+            <li class="renglon_dirlist">
+                <a class="link" href="{path + (os.path.sep if path != '/' else '') + entry}">{entry}</a>
+                {'<span class="silver">[DIR]</span>' if (await asyncio.to_thread(os.path.isdir, dirpath + os.path.sep + entry)) else (await get_file_details(entry))}
+            </li>'''
+        body += "</ul></body></html>"
+        body_len = len(body)
+        
+        # print(f"\n(PID {os.getpid()}) {method} {pth} request from {remote_ip}({remote_host}) {time.strftime('%Y-%m-%d %H:%M:%S')} - 200")
+        
+        try:
+            writer.write(self.success_line.encode("utf-8"))
+            writer.write(b"content-type: text/html; charset=utf-8\r\n"),
+            writer.write(f"content-length: {str(body_len)}\r\n".encode('utf-8'))
+            await writer.drain()
+        except Exception as e:
+            print(f"Error writing directory listing headers: {e}")
+            # return await self.send_status_response(writer, status_code=500, reason="Internal Server Error", msg=str(e))
+            return
+        try:
+            writer.write(b"\r\n")
+            await writer.drain()
+            writer.write(to_bytes(body))
+            await writer.drain()
+        except Exception as e:
+            print(f"Error directory listing writing body: {e}")
+            # return await self.send_status_response(writer, status_code=500, reason="Internal Server Error", msg=str(e))
+
     async def send_file(self, writer: asyncio.StreamWriter, fullpath: str) -> None:
 
         file_desc = await asyncio.to_thread(os.open, fullpath, os.O_RDONLY | os.O_NONBLOCK)
@@ -214,7 +340,7 @@ class ProtocolFactory:
         except Exception as e:
             print(f"Error writing headers: {e}")
             await asyncio.to_thread(os.close, file_desc)
-            # return await self.send_response(writer=writer, status_code=500, reason="Internal Server Error", msg=str(e))
+            # return await self.send_status_response(writer, status_code=500, reason="Internal Server Error", msg=str(e))
             return
         
         async def send_windows():
@@ -262,6 +388,7 @@ class ProtocolFactory:
             return await send_windows()
         
         if is_linux():
+            # return await send_mac()
             return await send_linux()
         
         if is_mac():
@@ -295,6 +422,7 @@ class ProtocolFactory:
         if not request_line:
             raise ValueError("Request line is empty after decoding.")
         try:
+            self.request_line = request_line
             method, path, protocol = re.split(r"\s+", request_line)
         except ValueError:
             raise ValueError("Request line is malformed. Unable to split into method, path, and protocol.")
@@ -302,7 +430,8 @@ class ProtocolFactory:
             raise ValueError("Request line is malformed. Missing method, path, or protocol.")
         return method.upper(), path, protocol
 
-    async def send_response(self, writer: asyncio.StreamWriter, status_code: int=404, reason: str = "Not found", msg:str="") -> None:
+    async def send_status_response(self, writer: asyncio.StreamWriter, status_code: int=404, reason: str = None, msg:str="") -> None:
+        reason = reason or status_dict.get(status_code, "Unknown Status")
         status_line = f"HTTP/1.1 {status_code} {reason}\r\n"
         writer.write(status_line.encode("utf-8"))
         writer.write(b"Content-Type: text/html\r\n")
@@ -334,7 +463,7 @@ class ProtocolFactory:
         exists = await is_static("./static/img")
         if not exists:
             msg = "Static directory not found. Please create a static directory with images."
-            return await self.send_response(writer=writer, status_code=404, reason="Not Found", msg=msg)
+            return await self.send_status_response(writer, status_code=404, msg=msg)
         listdir = await asyncio.to_thread(os.listdir, "./static/img")
         listdir = [entry for entry in listdir if mimetypes.guess_type(entry)[0] and mimetypes.guess_type(entry)[0].startswith("image")]
         img_src = random.choice(listdir)
