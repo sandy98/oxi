@@ -4,6 +4,7 @@ legacy/
 build/
 dist/
 oxi.egg-info/
+static/videos/
 *.pyc
 *.pyo
 *.pyd
