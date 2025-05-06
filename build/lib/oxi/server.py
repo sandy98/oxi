@@ -1,8 +1,13 @@
 # -*- coding: utf-8 -*-
 
-import asyncio, os, random, subprocess, re, mimetypes, errno
+import asyncio, os, random, subprocess, re, mimetypes, errno, json
 from typing import Callable
+from pprint import pprint
 from pathlib import Path
+from time import time as timestamp, strftime as tstrftime, strptime as tstrptime
+from datetime import datetime as dt
+from urllib.parse import urlparse, parse_qsl, unquote_plus
+from functools import wraps
 
 try:
     from . import  __version__ as oxi_version, __oxi_port__ as oxi_port, __oxi_host__ as oxi_host
@@ -187,7 +192,17 @@ class ProtocolFactory:
             msg = f"Method {method} not allowed."
             print(msg)
             return await self.send_status_response(writer, status_code=405, msg=msg)
- 
+
+        try:
+            request_headers_block= await self.get_headers_block(reader)
+            # print(f"\nHeaders block:\n{request_headers_block.decode('utf-8')}\n\n")
+        except ValueError as e:
+            print(f"Error parsing  request headers: {e}")
+            return await self.send_status_response(writer, status_code=400, msg=str(e))
+        request_headers = await self.parse_headers(request_headers_block)
+        print("@")
+        pprint(request_headers, indent=4, compact=False, width=40, sort_dicts=False)
+        print("@")
         if path == "/oxiserver_demo" and method == "GET":
             print(f"Serving Oxi Server demo page.")
             return await self.oxiserver_demo(writer=writer)
@@ -197,18 +212,18 @@ class ProtocolFactory:
                 if not await is_cgi_exe(fullpath, self.cgi_dir):
                     if method == "GET":
                         print(f"Serving file: {fullpath}")
-                        return await self.send_file(writer=writer, fullpath=fullpath)
+                        return await self.send_file(writer=writer, fullpath=fullpath, headers=request_headers)
                     else:
                         print(f"Method {method} not allowed for file: {fullpath}")
                         return await self.send_status_response(writer, status_code=405, msg=f"Method {method} not allowed for file.")  
                 else:
                     print(f"Serving CGI executable: {fullpath}")
-                    return await self.send_file(writer=writer, fullpath=fullpath)
+                    return await self.send_file(writer=writer, fullpath=fullpath, headers=request_headers)
             elif path == "/":
                 exists, index_file = await self.has_index()
                 if exists:
                     print(f"Serving index file: {index_file}")
-                    return await self.send_file(writer=writer, fullpath=index_file)
+                    return await self.send_file(writer=writer, fullpath=index_file, headers=request_headers)
                 else:
                     if not self.allow_dirlisting:
                         print(f"Directory listing not allowed: {fullpath}")
@@ -229,7 +244,8 @@ class ProtocolFactory:
                     print(f"File {path} not found.")
                     return await self.send_status_response(writer, status_code=404, msg=f"Resource '{path}' not found.")  
 
-    async def send_directory(self, writer: asyncio.StreamWriter, path: str, dirpath: str):
+    @classmethod
+    async def send_directory(cls, writer: asyncio.StreamWriter, path: str, dirpath: str):
         
         async def get_file_details(entry):
             fullpath = dirpath + os.path.sep + entry
@@ -308,7 +324,7 @@ class ProtocolFactory:
         # print(f"\n(PID {os.getpid()}) {method} {pth} request from {remote_ip}({remote_host}) {time.strftime('%Y-%m-%d %H:%M:%S')} - 200")
         
         try:
-            writer.write(self.success_line.encode("utf-8"))
+            writer.write(cls.success_line.encode("utf-8"))
             writer.write(b"content-type: text/html; charset=utf-8\r\n"),
             writer.write(f"content-length: {str(body_len)}\r\n".encode('utf-8'))
             await writer.drain()
@@ -325,14 +341,15 @@ class ProtocolFactory:
             print(f"Error directory listing writing body: {e}")
             # return await self.send_status_response(writer, status_code=500, reason="Internal Server Error", msg=str(e))
 
-    async def send_file(self, writer: asyncio.StreamWriter, fullpath: str) -> None:
+    @classmethod
+    async def send_file(cls, writer: asyncio.StreamWriter, fullpath: str, headers: dict = None) -> None:
 
         file_desc = await asyncio.to_thread(os.open, fullpath, os.O_RDONLY | os.O_NONBLOCK)
         file_stat = await asyncio.to_thread(os.fstat, file_desc)
         body_len = file_stat.st_size
         content_type = mimetypes.guess_type(fullpath)[0] or "application/octet-stream"
         try:
-            writer.write(self.success_line.encode("utf-8"))
+            writer.write(cls.success_line.encode("utf-8"))
             writer.write(f"Content-Type: {content_type}\r\n".encode("utf-8"))
             writer.write(f"Content-Length: {body_len}\r\n".encode("utf-8"))
             writer.write(b"\r\n")
@@ -393,8 +410,9 @@ class ProtocolFactory:
         
         if is_mac():
             return await send_mac()
-        
-    async def get_request_line(self, reader: asyncio.StreamReader) -> tuple[str]:
+
+    @classmethod    
+    async def get_request_line(cls, reader: asyncio.StreamReader) -> tuple[str]:
         """
         Read the request line from the client.
         """
@@ -411,7 +429,7 @@ class ProtocolFactory:
                     request_line = ''
                     break
                 else:
-                    asyncio.sleep(0)
+                    await asyncio.sleep(0)
                     continue
         if not request_line:
             raise ValueError("Request line is incomplete after multiple attempts.")
@@ -422,15 +440,57 @@ class ProtocolFactory:
         if not request_line:
             raise ValueError("Request line is empty after decoding.")
         try:
-            self.request_line = request_line
+            # self.request_line = request_line
             method, path, protocol = re.split(r"\s+", request_line)
         except ValueError:
             raise ValueError("Request line is malformed. Unable to split into method, path, and protocol.")
         if not method or not path or not protocol:
             raise ValueError("Request line is malformed. Missing method, path, or protocol.")
-        return method.upper(), path, protocol
+        return method.upper(), unquote_plus(path), protocol
 
-    async def send_status_response(self, writer: asyncio.StreamWriter, status_code: int=404, reason: str = None, msg:str="") -> None:
+    @classmethod
+    async def get_headers_block(cls, reader: asyncio.StreamReader) -> bytes:
+        """
+        Read header lines from the client.
+        """
+        retries = 0
+        max_retries = 3
+        while True:
+            try:
+                headers_block = await reader.readuntil(b"\r\n\r\n")
+                break
+            except asyncio.IncompleteReadError as e:
+                retries += 1
+                print(f"Retrying to read header blocks: {e}\nAttempt {retries}/{max_retries}")
+                if retries >= max_retries:
+                    headers_block = b''
+                    break
+                else:
+                    await asyncio.sleep(0)
+                    continue
+        if not headers_block:
+            raise ValueError("Headers block is incomplete after multiple attempts.")
+        headers_block = headers_block.rstrip(b"\r\n\r\n")
+        if not headers_block:
+            raise ValueError("Headers block is empty after stripping.")
+        # self.headers_block = headers_block
+        return headers_block
+
+    @classmethod
+    async def parse_headers(cls, headers_block: bytes) -> dict:
+        """
+        Parse the headers block into a dictionary.
+        """
+        headers = {}
+        lines = headers_block.decode("utf-8").split("\r\n")
+        for line in lines:
+            if ": " in line:
+                key, value = line.split(": ", 1)
+                headers[key.strip().lower()] = value.strip()
+        return headers
+    
+    @classmethod
+    async def send_status_response(cls, writer: asyncio.StreamWriter, status_code: int=404, reason: str = None, msg:str="") -> None:
         reason = reason or status_dict.get(status_code, "Unknown Status")
         status_line = f"HTTP/1.1 {status_code} {reason}\r\n"
         writer.write(status_line.encode("utf-8"))
@@ -482,6 +542,12 @@ class ProtocolFactory:
                 <h2>Version: <strong>{self.version}</strong></h2>
                 <hr/>
                 <p>{newzen}</p>
+                <hr>
+                <p style="text-align: center;">
+                    <a href="/">Home</a>
+                </p>
+                <hr>
+                <p style="text-align: right;ont-size: 16px; margin-right 1em;">Oxi/{oxi_version}</p>
                 <script>
                     setInterval(() => location.href = location.href, 10000);
                 </script>
