@@ -436,7 +436,16 @@ class ProtocolFactory:
         if not bytesrange:
             print(f"Range header not found. Sending full file.")
             # return await cls.send_file(writer=writer, fullpath=fullpath, headers=headers, forced=True)
-            start, end = 0, mp4.filesize - 1
+            start = 0
+            end = 0
+            boundaries = await mp4.faststart_boundaries
+            for entry in boundaries:
+                moov_bounds = entry.get('moov')
+                if moov_bounds:
+                    end = moov_bounds[1] - 1
+                    break
+            if end == 0:
+                end = mp4.filesize - 1
         else:
             bytesrange = bytesrange.lstrip("bytes=")
             start, end = bytesrange.split("-")

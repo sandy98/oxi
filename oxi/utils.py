@@ -1,5 +1,5 @@
 #-*- coding: utf-8 -*-
-import re, asyncio, platform
+import re, asyncio, platform, threading
 from functools import wraps
 from http import HTTPStatus
 
@@ -81,6 +81,16 @@ def dual_mode(func):
 async def aopen(filename:str, mode:str='r'):
     coro = asyncio.to_thread(open, filename, mode)
     return await coro
+
+######################################################################################
+
+class ResultThread(threading.Thread):
+    def __init__(self, *args, **kwargs):
+        self.result = None
+        super().__init__(*args, **kwargs)
+
+    def run(self):
+        self.result = self._target(*self._args, **self._kwargs)
 
 ######################################################################################
 
