@@ -3,10 +3,11 @@
 
 # test with: static/Media/Videos/Cele/Cele_patinando_cerca_de_Venecia.mp4
 
-import os, mmap, io
+import os, mmap, asyncio
 from mimetypes import guess_type
 import argparse #, copy
 from . import __version__ as oxi_version
+from .utils import dual_mode
        
 class Smmap:
     def __init__(self, fileno, offset:int = 0, limit:int =  0):
@@ -154,6 +155,8 @@ class Atom:
                 child = container._get_atom(fp, offset, ordinal, self.level + 1)
                 if child.size == 0:
                     raise ValueError("Atom of size 0 not admitted out of 0 level.")
+                if child.offset + child.size > container.filesize:
+                    raise ValueError("Atom size exceeds file boundaries.")
                 if child.name == '\x00\x00\x00\x00':
                     offset += child.size
                     continue
@@ -368,6 +371,7 @@ Size: {self.filesize:,}
                         break
             print(f"Mp4 '{atm.name}' stream sent succesfully ({atm.size:,} bytes).")
 
+    @dual_mode
     def stream_range(self, begin: int=0, end: int=0):
         if not end:
             end = self.filesize - 1
@@ -400,14 +404,14 @@ Size: {self.filesize:,}
             if atom.ordinal == beginner.get('ordinal'):
                 frag_begin = beginner.get('offset')
                 if atom.ordinal == ender.get('ordinal'):
-                    length = ender.get('offset') - frag_begin
+                    length = ender.get('offset') - frag_begin + 1
                     # fragment = atom.contents[beginner.get('offset'):ender.get('offset')]
                 else:
                     length = atom.size - frag_begin
                     # fragment = atom.contents[beginner.get('offset'):]
             elif atom.ordinal == ender.get('ordinal'):
                 frag_begin = 0
-                length = ender.get('offset')
+                length = ender.get('offset') + 1
                 # fragment = atom.contents[:ender.get('offset')]
             else:
                 frag_begin = 0
@@ -416,6 +420,70 @@ Size: {self.filesize:,}
             atom.contents.seek(frag_begin)
             gen = self._get_chunks(length, atom.contents)
             for chunk in gen:
+                yield chunk
+
+    async def async_stream_range(self, begin: int=0, end: int=0):
+        async def _get_chunks(limit: int, stream = None, chunksize:int = None):
+            if stream is None:
+                stream = self.fp
+            chunk_size = chunksize or mmap.PAGESIZE
+            while chunk_size < (2 ** 15):
+                chunk_size *= 2
+            remaining = limit
+            while remaining:
+                chunk = await asyncio.to_thread(stream.read, min(remaining, chunk_size))
+                if not chunk:
+                    return
+                remaining -= len(chunk)
+                yield chunk
+
+        if not end:
+            end = self.filesize - 1
+        beginner, ender = {} , {}
+        for atom in self.faststart:
+            if begin in range(*atom.boundaries):
+                beginner['name'] = atom.name
+                beginner['ordinal'] = atom.ordinal
+                beginner['offset'] = begin - atom.offset
+            if end in range(*atom.boundaries):
+                ender['name'] = atom.name
+                ender['ordinal'] = atom.ordinal
+                ender['offset'] = end - atom.offset
+        if not ender:
+            atom = self.faststart[-1]
+            ender['name'] = atom.name
+            ender['ordinal'] = atom.ordinal
+            ender['offset'] = atom.size - 1
+        if not beginner:
+            atom = self.faststart[0]
+            ender['name'] = atom.name
+            ender['ordinal'] = atom.ordinal
+            ender['offset'] = 0
+        fragment = None
+        for atom in self.faststart:
+            if atom.ordinal < beginner.get('ordinal'):
+                continue
+            if atom.ordinal > ender.get('ordinal'):
+                return
+            if atom.ordinal == beginner.get('ordinal'):
+                frag_begin = beginner.get('offset')
+                if atom.ordinal == ender.get('ordinal'):
+                    length = ender.get('offset') - frag_begin + 1
+                    # fragment = atom.contents[beginner.get('offset'):ender.get('offset')]
+                else:
+                    length = atom.size - frag_begin
+                    # fragment = atom.contents[beginner.get('offset'):]
+            elif atom.ordinal == ender.get('ordinal'):
+                frag_begin = 0
+                length = ender.get('offset') + 1
+                # fragment = atom.contents[:ender.get('offset')]
+            else:
+                frag_begin = 0
+                length = atom.size
+                # fragment = atom.contents[:]
+            await asyncio.to_thread(atom.contents.seek, frag_begin)
+            gen = _get_chunks(length, atom.contents)
+            async for chunk in gen:
                 yield chunk
 
     def save(self, outputfile: str = 'out.mp4'):

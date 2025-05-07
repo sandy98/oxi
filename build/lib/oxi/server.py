@@ -11,17 +11,19 @@ from functools import wraps
 
 try:
     from . import  __version__ as oxi_version, __oxi_port__ as oxi_port, __oxi_host__ as oxi_host
+    from .config import Config
     from .utils import (is_windows, is_linux, is_mac, 
                         http_status_dict as status_dict, to_bytes)
-    from .config import Config
+    from .mp4parser import Mp4
 except ImportError:
     from activate_this import oxi_env
     if not oxi_env:
         raise ImportError("Oxi environment not activated. Please activate the virtual environment.")
     from oxi import  __version__ as oxi_version, __oxi_port__ as oxi_port, __oxi_host__ as oxi_host
+    from oxi.config import Config
     from oxi.utils import (is_linux, is_windows, is_mac, 
                            http_status_dict as status_dict, to_bytes)
-    from oxi.config import Config
+    from oxi.mp4parser import Mp4
 
 async def is_static(resource:str) -> bool:
     """
@@ -137,6 +139,12 @@ class ProtocolFactory:
     """
     
     success_line = "HTTP/1.1 200 OK\r\n"
+    partial_line = "HTTP/1.1 206 Partial Content\r\n"
+    bad_request_line = "HTTP/1.1 400 Bad Request\r\n"
+    not_implemented_line = "HTTP/1.1 501 Not Implemented\r\n"
+    forbidden_line = "HTTP/1.1 403 Forbidden\r\n"
+    moved_line = "HTTP/1.1 301 Moved Permanently\r\n"
+    moved_temporary_line = "HTTP/1.1 302 Moved Temporarily\r\n"
     error_line = "HTTP/1.1 500 Internal Server Error\r\n"
     not_found_line = "HTTP/1.1 404 Not Found\r\n"
 
@@ -250,7 +258,7 @@ class ProtocolFactory:
         async def get_file_details(entry):
             fullpath = dirpath + os.path.sep + entry
             size = await asyncio.to_thread(os.path.getsize,fullpath)
-            ret = f'<span style="text-align: right;" class="black">{size:,} bytes.</span>'
+            ret = f'<span style="text-align: right;" class="black">{size:,} bytes</span>'
             return ret
         
         pth = Path(path.strip('/'))
@@ -275,8 +283,8 @@ class ProtocolFactory:
                 }}
                 .renglon_dirlist {{
                     margin-left: 1em;
-                    width: 33%;
-                    max-width: 33%;
+                    width: 50%;
+                    max-width: 50%;
                     display: flex;
                     flex-direction: row;
                     justify-content: space-between;
@@ -342,12 +350,15 @@ class ProtocolFactory:
             # return await self.send_status_response(writer, status_code=500, reason="Internal Server Error", msg=str(e))
 
     @classmethod
-    async def send_file(cls, writer: asyncio.StreamWriter, fullpath: str, headers: dict = None) -> None:
+    async def send_file(cls, writer: asyncio.StreamWriter, fullpath: str, 
+                        headers: dict = None, forced: bool = False) -> None:
 
+        content_type = mimetypes.guess_type(fullpath)[0] or "application/octet-stream"
+        if content_type == 'video/mp4' and not forced:
+            return await cls.send_mp4(writer=writer, fullpath=fullpath, headers=headers)
         file_desc = await asyncio.to_thread(os.open, fullpath, os.O_RDONLY | os.O_NONBLOCK)
         file_stat = await asyncio.to_thread(os.fstat, file_desc)
         body_len = file_stat.st_size
-        content_type = mimetypes.guess_type(fullpath)[0] or "application/octet-stream"
         try:
             writer.write(cls.success_line.encode("utf-8"))
             writer.write(f"Content-Type: {content_type}\r\n".encode("utf-8"))
@@ -410,6 +421,82 @@ class ProtocolFactory:
         
         if is_mac():
             return await send_mac()
+
+    @classmethod
+    async def send_mp4(cls, writer: asyncio.StreamWriter, fullpath: str, headers: dict = None) -> None:
+        mp4 = Mp4(fullpath)
+        sec_fetch_dest = headers.get("sec-fetch-dest", None)
+        if sec_fetch_dest:
+            if sec_fetch_dest == "document":
+                print(f"MP4 file requested as document: {fullpath}")
+                return await cls.send_file(writer=writer, fullpath=fullpath, headers=headers, forced=True)
+                # try:
+                #     writer.write(cls.success_line.encode("utf-8"))
+                #     writer.write(b"Content-Type: video/mp4\r\n")
+                #     writer.write(b"Accept-Ranges: bytes\r\n")
+                #     writer.write(f"Content-Length: {mp4.filesize}\r\n\r\n".encode("utf-8"))
+                #     await writer.drain()
+                #     writer.close()
+                #     await writer.wait_closed()
+                #     return
+                # except Exception as e:
+                #     print(f"Error writing headers: {e}")
+                #     # return await cls.send_status_response(writer, status_code=500, reason="Internal Server Error", msg=str(e))
+                #     return
+            elif sec_fetch_dest == "video":
+                print(f"MP4 file requested as video: {fullpath}")
+                # return await cls.send_file(writer=writer, fullpath=fullpath, headers=headers, forced=True)
+                try:
+                    bytesrange = headers.get("range")
+                    if not bytesrange:
+                        print(f"Range header not found. Sending full file.")
+                        return await cls.send_file(writer=writer, fullpath=fullpath, headers=headers, forced=True)
+                    else:
+                        bytesrange = bytesrange.lstrip("bytes=")
+                        start, end = bytesrange.split("-")
+                        start = int(start)
+                        end = int(end) if end else mp4.filesize - 1
+                        if start < 0 or end >= mp4.filesize or start > end:
+                            print(f"Invalid range: {bytesrange}. Sending full file.")
+                            return await cls.send_file(writer=writer, fullpath=fullpath, headers=headers, forced=True)
+                        length = end - start + 1
+                        writer.write(cls.partial_line.encode("utf-8"))
+                        writer.write(b"Content-Type: video/mp4\r\n")
+                        writer.write(b"Accept-Ranges: bytes\r\n")
+                        writer.write(f'Content-Range: bytes {start}-{end}/{mp4.filesize}\r\n'.encode('utf-8'))                        
+                        writer.write(f"Content-Length: {length}\r\n\r\n".encode("utf-8"))
+                        await writer.drain()
+                except Exception as e:
+                    print(f"Error writing mp4 content: {e}")
+                    # return await cls.send_status_response(writer, status_code=500, reason="Internal Server Error", msg=str(e))
+                    return
+                stream = mp4.async_stream_range(start, end)
+                written = 0
+                async for chunk in stream:
+                    try:
+                        writer.write(chunk)
+                        await writer.drain()
+                        written += len(chunk)
+                        # print(f"Written {len(chunk)} bytes for a total of {written} out of {mp4.filesize}.")
+                    except Exception as e:
+                        print(f"Error writing mp4 chunk: {e}")
+                        # return await cls.send_status_response(writer, status_code=500, reason="Internal Server Error", msg=str(e))
+                        break
+                try:    
+                    writer.close()
+                    await writer.wait_closed()
+                except Exception as e:
+                    print(f"Error closing writer: {e}")
+                    # return await cls.send_status_response(writer, status_code=500, reason="Internal Server Error", msg=str(e))
+                finally:
+                    print(f"{written} bytes written out of {mp4.filesize}.")
+                    return
+            else:
+                print(f"MP4 file requested as {sec_fetch_dest}: {fullpath}")
+                return await cls.send_status_response(writer, status_code=400, msg="MP4 file requested with unknown sec-fetch-dest")
+        else:
+            await cls.send_file(writer=writer, fullpath=fullpath, headers=headers, forced=True)
+        # return await cls.send_status_response(writer, status_code=501, msg="MP4 file reproduction not implemented yet.")
 
     @classmethod    
     async def get_request_line(cls, reader: asyncio.StreamReader) -> tuple[str]:

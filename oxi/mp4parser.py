@@ -266,12 +266,12 @@ Size: {self.filesize:,}
         self._patched_moov = mmap.mmap(-1, self.moov.size)
         self._patched_moov.write(self.moov.contents.read())
         for atom in self.relocation_targets:
-            os.sys.stderr.write(f'{atom.name} located at ' + str(atom.offset) + '\n')
-            os.sys.stderr.flush()
+            # os.sys.stderr.write(f'{atom.name} located at ' + str(atom.offset) + '\n')
+            # os.sys.stderr.flush()
             offset_pos_begin = atom.offset - self.moov.offset
             offset_pos = offset_pos_begin
             entry_count = int.from_bytes(self._patched_moov[offset_pos+12:offset_pos+16], byteorder='big')
-            print(f"Patching atom '{atom.name}' with {entry_count} entries.")
+            # print(f"Patching atom '{atom.name}' with {entry_count} entries.")
             displacement = 4 if atom.name == 'stco' else 8 # in case atom.name == 'co64'
             for i in range(entry_count):
                 offset_pos = offset_pos_begin + 16 + (i * displacement)
