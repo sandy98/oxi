@@ -331,6 +331,7 @@ Size: {self.filesize:,}
         return self.atoms
 
     @property
+    @dual_mode
     def faststart_boundaries(self):
         return list(map(lambda a: a.named_boundaries, self.faststart))
 
