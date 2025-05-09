@@ -5,6 +5,9 @@ build/
 dist/
 oxi.egg-info/
 static/videos/
+virtual-env/
+oxi/examples/virtual-env/
+oxi/examples/static/videos
 *.pyc
 *.pyo
 *.pyd
