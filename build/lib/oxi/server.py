@@ -150,13 +150,16 @@ class ProtocolFactory:
 
     @property
     def base_dir(self) -> str:
-        if len(self._base_dir) == 0:
-            return ''
+        if not os.path.exists(self._base_dir):
+            self._base_dir = ''
         return f"{os.path.sep}{self._base_dir}"
 
     @base_dir.setter
     def base_dir(self, value: str) -> None:
-        self._base_dir = value
+        if os.path.exists(value):
+            self._base_dir = value
+        else:
+            raise ValueError(f"Base directory '{value}' does not exist.")
 
     @property
     def full_base_dir(self) -> str:
@@ -192,6 +195,15 @@ class ProtocolFactory:
         """
         try:
             method, path, protocol = await self.get_request_line(reader)
+            parsed = urlparse(path)
+            path = parsed.path
+            query = parsed.query
+            if query:
+                query = dict(parse_qsl(query))
+            else:
+                query = {}
+            netloc = parsed.netloc
+
         except ValueError as e:
             print(f"Error parsing request line: {e}")
             return await self.send_status_response(writer, status_code=400, msg=str(e))
@@ -425,6 +437,7 @@ class ProtocolFactory:
     @classmethod
     async def send_mp4(cls, writer: asyncio.StreamWriter, fullpath: str, headers: dict = None) -> None:
         mp4 = Mp4(fullpath)
+        boundaries = await mp4.faststart_boundaries
         response_line = cls.partial_line
         start, end = 0, mp4.filesize - 1
 
@@ -435,10 +448,9 @@ class ProtocolFactory:
         bytesrange = headers.get("range")
         if not bytesrange:
             print(f"Range header not found. Sending full file.")
-            # return await cls.send_file(writer=writer, fullpath=fullpath, headers=headers, forced=True)
             start = 0
             end = 0
-            boundaries = await mp4.faststart_boundaries
+            # boundaries = await mp4.faststart_boundaries
             for entry in boundaries:
                 moov_bounds = entry.get('moov')
                 if moov_bounds:

@@ -1,9 +1,14 @@
 #-*- coding: utf-8 -*-
-import re, asyncio, platform, threading
+import re, asyncio, platform, threading, sys, termios
 from functools import wraps
+from contextlib import contextmanager
 from http import HTTPStatus
 
+######################################################################################
+
 http_status_dict = {h.value: h.phrase for h in HTTPStatus}
+
+######################################################################################
 
 def is_windows():
     """
@@ -81,6 +86,28 @@ def dual_mode(func):
 async def aopen(filename:str, mode:str='r'):
     coro = asyncio.to_thread(open, filename, mode)
     return await coro
+
+######################################################################################
+
+@contextmanager
+def no_ctrlc_echo():
+    """
+    Context manager to suppress ^C echo in terminal when Ctrl+C is pressed.
+    Only works on POSIX terminals (Linux, macOS).
+    """
+    if not sys.stdin.isatty():
+        yield
+        return
+
+    fd = sys.stdin.fileno()
+    try:
+        attrs = termios.tcgetattr(fd)
+        new_attrs = attrs[:]
+        new_attrs[3] = new_attrs[3] & ~termios.ECHOCTL  # Clear ECHOCTL
+        termios.tcsetattr(fd, termios.TCSANOW, new_attrs)
+        yield
+    finally:
+        termios.tcsetattr(fd, termios.TCSANOW, attrs)
 
 ######################################################################################
 

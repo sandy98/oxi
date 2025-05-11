@@ -4,7 +4,9 @@ legacy/
 build/
 dist/
 oxi.egg-info/
+oxi.egg-info/*
 static/videos/
+static/videos/*
 virtual-env/
 oxi/examples/virtual-env/
 oxi/examples/static/videos
