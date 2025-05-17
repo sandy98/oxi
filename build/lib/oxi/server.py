@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
-import asyncio, os, random, subprocess, re, mimetypes, errno, json
+import asyncio, os, random, subprocess, re, mimetypes, errno, signal, hashlib, time
+from threading import Thread
 from typing import Callable
 from pprint import pprint
 from pathlib import Path
@@ -13,7 +14,7 @@ try:
     from . import  __version__ as oxi_version, __oxi_port__ as oxi_port, __oxi_host__ as oxi_host
     from .config import Config
     from .utils import (is_windows, is_linux, is_mac, 
-                        http_status_dict as status_dict, to_bytes)
+                        http_status_dict as status_dict, to_bytes, no_ctrlc_echo)
     from .mp4parser import Mp4
 except ImportError:
     from activate_this import oxi_env
@@ -22,7 +23,7 @@ except ImportError:
     from oxi import  __version__ as oxi_version, __oxi_port__ as oxi_port, __oxi_host__ as oxi_host
     from oxi.config import Config
     from oxi.utils import (is_linux, is_windows, is_mac, 
-                           http_status_dict as status_dict, to_bytes)
+                           http_status_dict as status_dict, to_bytes, no_ctrlc_echo)
     from oxi.mp4parser import Mp4
 
 async def is_static(resource:str) -> bool:
@@ -658,27 +659,98 @@ class ProtocolFactory:
         writer.close()
         await writer.wait_closed()
 
+######################################################################################
 
-async def run_dev_server(protocol: Callable = ProtocolFactory(), host:str=oxi_host, port:int=oxi_port) -> None:
-    server = await asyncio.start_server(protocol, host, port, reuse_address=True, reuse_port=True)
+def fs_monitor():
+
+    parentdir = Path(__file__).parent
+
+    pyfiles = [open(str(entry), 'rb') for entry in parentdir.glob("*.py")]
+    hashes = [hashlib.sha1(fd.read()).hexdigest() for fd in pyfiles]
+
+    while True:
+        time.sleep(1)
+        newpyfiles = [open(str(entry), 'rb') for entry in parentdir.glob("*.py")]
+        if len(newpyfiles) != len(pyfiles):
+            print(f"File count changed. Signaling server restart")
+            time.sleep(0.5)  # Optional debounce
+            os.execv(os.sys.executable, [os.sys.executable] + os.sys.argv)            # os.kill(os.getpid(), signal.SIGUSR1)
+            # os.kill(os.getpid(), signal.SIGUSR1)
+            # return
+        newhashes = [hashlib.sha1(fd.read()).hexdigest() for fd in newpyfiles]
+        if newhashes != hashes:
+            print(f"File hashes changed. Signaling server restart")
+            time.sleep(0.5)  # Optional debounce
+            os.execv(os.sys.executable, [os.sys.executable] + os.sys.argv)            # os.kill(os.getpid(), signal.SIGUSR1)
+            # os.kill(os.getpid(), signal.SIGUSR1)
+            # return
+        else:
+            for fd in newpyfiles:
+                fd.close()
+
+######################################################################################
+
+async def run_dev_server(protocol: Callable = ProtocolFactory(), 
+                         host:str=oxi_host, port:int=oxi_port, 
+                         unix_socket:str=None) -> None:
+    
     subprocess.run("clear")
-    print(f"\n Oxi Server running at {host}:{port}\n")
-    async with server:
-        try:
-            await server.serve_forever()
-        except KeyboardInterrupt:
-            print("\n Oxi Server stopped by user")
-        except Exception as e:
-            print(f"\n Oxi Server stopped with error: {e}")
-        finally:            
-            await server.wait_closed()
-            print("\n Oxi Server closed")
 
-async def main():
+    with no_ctrlc_echo():
+        stop_event = asyncio.Event()
+        loop = asyncio.get_running_loop()
+
+        def _signal_handler():
+            print("\nSignal received. Shutting down...")
+            stop_event.set()
+
+    
+        loop.add_signal_handler(signal.SIGINT, _signal_handler)
+        loop.add_signal_handler(signal.SIGTERM, _signal_handler)
+        
+        server = None
+        if unix_socket:
+            if os.path.exists(unix_socket):
+                os.remove(unix_socket)
+            server = await asyncio.start_unix_server(protocol, path=unix_socket, loop=loop)
+        else:
+            server = await asyncio.start_server(protocol, host, port, reuse_address=True, reuse_port=True)
+
+        server_task = asyncio.create_task(server.serve_forever())
+
+        if unix_socket:
+            print(f"\n Oxi Server running at {unix_socket}\n")
+        else:
+            print(f"\n Oxi Server running at {host}:{port}\n")
+
+        # Wait for shutdown signal
+        await stop_event.wait()
+        print("Stopping Oxi server...")
+
+        # Cleanup
+        server.close()
+        await server.wait_closed()
+        server_task.cancel()
+
+        try:
+            await server_task
+        except asyncio.CancelledError:
+            pass
+
+        print("Oxi Server shut down cleanly.")
+
+async def runner():
     # protocol = ProtocolFactory()
     # protocol.allow_dirlisting = False
     # await run_dev_server(protocol, host=oxi_host, port=oxi_port)
     await run_dev_server(host=oxi_host, port=oxi_port) # Uses ProtocolFactory() by default
 
+def main():
+    # Start the file system monitor in a separate thread
+    fs_monitor_thread = Thread(target=fs_monitor, daemon=True)
+    fs_monitor_thread.start()
+    # Run the server
+    asyncio.run(runner())
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

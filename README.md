@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/sandy98/oxi/main/static/img/oxi_1_rounded.jpg" alt="Oxi Logo" width="125px" />
+  <img src="https://raw.githubusercontent.com/sandy98/oxi/main/oxi/examples/static/img/oxi_1_rounded.jpg" alt="Oxi Logo" width="125px" />
 
 </p>
 
