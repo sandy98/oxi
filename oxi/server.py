@@ -376,6 +376,7 @@ class ProtocolFactory:
             writer.write(cls.success_line.encode("utf-8"))
             writer.write(f"Content-Type: {content_type}\r\n".encode("utf-8"))
             writer.write(f"Content-Length: {body_len}\r\n".encode("utf-8"))
+            writer.write("Access-Control-Allow-Origin: *\r\n".encode("utf-8"))
             writer.write(b"\r\n")
             await writer.drain()
         except Exception as e:

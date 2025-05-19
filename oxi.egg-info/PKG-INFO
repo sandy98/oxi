@@ -1,21 +1,30 @@
-Metadata-Version: 2.1
+Metadata-Version: 2.4
 Name: oxi
-Version: 0.2.23
+Version: 0.2.24
 Summary: ASGI full stack: Web Server, Web App and a ton of goodies.
 Home-page: https://github.com/sandy98/oxi
 Author: Domingo E. Savoretti
 Author-email: esavoretti@gmail.com
 License: MIT
-Platform: UNKNOWN
 Classifier: Programming Language :: Python :: 3
 Classifier: License :: OSI Approved :: MIT License
 Classifier: Operating System :: OS Independent
 Requires-Python: >=3.9
 Description-Content-Type: text/markdown
 License-File: LICENSE
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: home-page
+Dynamic: license
+Dynamic: license-file
+Dynamic: requires-python
+Dynamic: summary
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/sandy98/oxi/main/static/img/oxi_1_rounded.jpg" alt="Oxi Logo" width="125px" />
+  <img src="https://raw.githubusercontent.com/sandy98/oxi/main/oxi/examples/static/img/oxi_1_rounded.jpg" alt="Oxi Logo" width="125px" />
 
 </p>
 
@@ -46,5 +55,3 @@ does.
 
 
 But there's a lot more coming soon...
-
-
