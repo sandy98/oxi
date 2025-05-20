@@ -472,7 +472,7 @@ class ProtocolFactory:
         try:
             writer.write(response_line.encode("utf-8"))
             writer.write(b"Content-Type: video/mp4\r\n")
-            writer.write(b"Access-Control-Allow-Origin: *\r\n")
+            # writer.write(b"Access-Control-Allow-Origin: *\r\n")
             writer.write(b"Accept-Ranges: bytes\r\n")
             print(f'\nSENDING video content:\tContent-Range: bytes {start}-{end}/{mp4.filesize}\n')
             writer.write(f'Content-Range: bytes {start}-{end}/{mp4.filesize}\r\n'.encode('utf-8'))                        
