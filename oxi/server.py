@@ -346,6 +346,7 @@ class ProtocolFactory:
         
         try:
             writer.write(cls.success_line.encode("utf-8"))
+            writer.write(f"Server: oxi/{oxi_version}\r\n".encode("utf-8"))
             writer.write(b"content-type: text/html; charset=utf-8\r\n"),
             writer.write(f"content-length: {str(body_len)}\r\n".encode('utf-8'))
             await writer.drain()
@@ -374,6 +375,7 @@ class ProtocolFactory:
         body_len = file_stat.st_size
         try:
             writer.write(cls.success_line.encode("utf-8"))
+            writer.write(f"Server: oxi/{oxi_version}\r\n".encode("utf-8"))
             writer.write(f"Content-Type: {content_type}\r\n".encode("utf-8"))
             writer.write(f"Content-Length: {body_len}\r\n".encode("utf-8"))
             writer.write("Access-Control-Allow-Origin: *\r\n".encode("utf-8"))
@@ -388,7 +390,7 @@ class ProtocolFactory:
         async def send_windows():
             remaining = body_len
             while remaining > 0:
-                chunk = min(self.chunk_size, remaining)
+                chunk = min(cls.chunk_size, remaining)
                 try:
                     data = os.read(file_desc, chunk)
                     if not data:
@@ -471,6 +473,7 @@ class ProtocolFactory:
         length = end - start + 1
         try:
             writer.write(response_line.encode("utf-8"))
+            writer.write(f"Server: oxi/{oxi_version}\r\n".encode("utf-8"))
             writer.write(b"Content-Type: video/mp4\r\n")
             # writer.write(b"Access-Control-Allow-Origin: *\r\n")
             writer.write(b"Accept-Ranges: bytes\r\n")
@@ -587,6 +590,7 @@ class ProtocolFactory:
     async def send_status_response(cls, writer: asyncio.StreamWriter, status_code: int=404, reason: str = None, msg:str="") -> None:
         reason = reason or status_dict.get(status_code, "Unknown Status")
         status_line = f"HTTP/1.1 {status_code} {reason}\r\n"
+        writer.write(f"Server: oxi/{oxi_version}\r\n".encode("utf-8"))
         writer.write(status_line.encode("utf-8"))
         writer.write(b"Content-Type: text/html\r\n")
         realmsg = msg + '\r\n' if len(msg) else ''
@@ -600,7 +604,8 @@ class ProtocolFactory:
 <p>{realmsg}</p>
 </body>
 </html>"""
-        # response = f"{status_code} {reason}\r\n{realmsg}\r\n"
+        writer.write(f"Server: oxi/{oxi_version}\r\n".encode("utf-8"))
+        writer.write(b"Content-Type: text/html; charset=utf-8\r\n")
         writer.write(f"Content-Length: {len(response)}\r\n\r\n".encode("utf-8"))
         writer.write(response.encode("utf-8"))
         await writer.drain()
@@ -650,6 +655,7 @@ class ProtocolFactory:
 """
         content_length = len(html)
         print(f"Writing to socket {content_length} bytes.\n")
+        writer.write(f"Server: oxi/{oxi_version}\r\n".encode("utf-8"))
         content_type = "text/html; charset=utf-8"
         writer.write(self.success_line.encode("utf-8"))
         writer.write(f"Content-Type: {content_type}\r\n".encode("utf-8"))
