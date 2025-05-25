@@ -590,9 +590,6 @@ class ProtocolFactory:
     async def send_status_response(cls, writer: asyncio.StreamWriter, status_code: int=404, reason: str = None, msg:str="") -> None:
         reason = reason or status_dict.get(status_code, "Unknown Status")
         status_line = f"HTTP/1.1 {status_code} {reason}\r\n"
-        writer.write(f"Server: oxi/{oxi_version}\r\n".encode("utf-8"))
-        writer.write(status_line.encode("utf-8"))
-        writer.write(b"Content-Type: text/html\r\n")
         realmsg = msg + '\r\n' if len(msg) else ''
         response = f"""
 <html>
@@ -604,14 +601,27 @@ class ProtocolFactory:
 <p>{realmsg}</p>
 </body>
 </html>"""
-        writer.write(f"Server: oxi/{oxi_version}\r\n".encode("utf-8"))
-        writer.write(b"Content-Type: text/html; charset=utf-8\r\n")
-        writer.write(f"Content-Length: {len(response)}\r\n\r\n".encode("utf-8"))
-        writer.write(response.encode("utf-8"))
-        await writer.drain()
-        writer.close()
-        await writer.wait_closed()
+        if writer.is_closing():
+            print(f"Writer is closing. Cannot send status response.")
+            return
         
+        try:
+            writer.write(status_line.encode("utf-8"))
+            writer.write(f"Server: oxi/{oxi_version}\r\n".encode("utf-8"))
+            writer.write(b"Content-Type: text/html; charset=utf-8\r\n")
+            writer.write(f"Content-Length: {len(response)}\r\n\r\n".encode("utf-8"))
+            writer.write(response.encode("utf-8"))
+            await writer.drain()
+        except Exception as e:
+            print(f"Error writing status response: {e}")
+            return
+        try:
+            writer.close()
+            await writer.wait_closed()
+        except Exception as e:
+            print(f"Error closing writer: {e}")
+            return
+
     async def oxiserver_demo(self, writer: asyncio.StreamWriter = None) -> None:
         """
         Send a demo HTML page to the client.
