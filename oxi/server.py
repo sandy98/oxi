@@ -26,6 +26,8 @@ except ImportError:
                            http_status_dict as status_dict, to_bytes, no_ctrlc_echo)
     from oxi.mp4parser import Mp4
 
+server_software =f"Oxi/{oxi_version}"
+
 async def is_static(resource:str) -> bool:
     """
     Check if the resource exists in the file system.
@@ -221,9 +223,6 @@ class ProtocolFactory:
             print(f"Error parsing  request headers: {e}")
             return await self.send_status_response(writer, status_code=400, msg=str(e))
         request_headers = await self.parse_headers(request_headers_block)
-        # print("@")
-        # pprint(request_headers, indent=4, compact=False, width=40, sort_dicts=False)
-        # print("@")
         if path == "/oxiserver_demo" and method == "GET":
             print(f"Serving Oxi Server demo page.")
             return await self.oxiserver_demo(writer=writer)
@@ -324,7 +323,7 @@ class ProtocolFactory:
             </head><body style="margin-left: 1em; margin-right: 1em;">
             <h2>Directory listing for <span class="green">.{str(path)}</span></h2></hr>
             <hr>
-            <p style="margin-bottom: 1em; text-align: center; font-family: Times New Roman; font-size: 16px;">Oxi/{oxi_version}</p>
+            <p style="margin-bottom: 1em; text-align: center; font-family: Times New Roman; font-size: 16px;">{server_software}</p>
             <hr>
             <ul>
                 <li class="renglon_dirlist"><a class="link" title="Home" href="/">.</a></li>
@@ -346,7 +345,7 @@ class ProtocolFactory:
         
         try:
             writer.write(cls.success_line.encode("utf-8"))
-            writer.write(f"Server: oxi/{oxi_version}\r\n".encode("utf-8"))
+            writer.write(f"Server: {server_software}\r\n".encode("utf-8"))
             writer.write(b"content-type: text/html; charset=utf-8\r\n"),
             writer.write(f"content-length: {str(body_len)}\r\n".encode('utf-8'))
             await writer.drain()
@@ -375,7 +374,7 @@ class ProtocolFactory:
         body_len = file_stat.st_size
         try:
             writer.write(cls.success_line.encode("utf-8"))
-            writer.write(f"Server: oxi/{oxi_version}\r\n".encode("utf-8"))
+            writer.write(f"Server: {server_software}\r\n".encode("utf-8"))
             writer.write(f"Content-Type: {content_type}\r\n".encode("utf-8"))
             writer.write(f"Content-Length: {body_len}\r\n".encode("utf-8"))
             writer.write("Access-Control-Allow-Origin: *\r\n".encode("utf-8"))
@@ -473,7 +472,7 @@ class ProtocolFactory:
         length = end - start + 1
         try:
             writer.write(response_line.encode("utf-8"))
-            writer.write(f"Server: oxi/{oxi_version}\r\n".encode("utf-8"))
+            writer.write(f"Server: {server_software}\r\n".encode("utf-8"))
             writer.write(b"Content-Type: video/mp4\r\n")
             # writer.write(b"Access-Control-Allow-Origin: *\r\n")
             writer.write(b"Accept-Ranges: bytes\r\n")
@@ -596,7 +595,7 @@ class ProtocolFactory:
 <head><title>{status_code} {reason}</title></head>
 <body style="background-color: #f0f0f0; font-family: Helvetica, Arial, sans-serif;">
 <center><h1>{status_code} {reason}</h1></center>
-<hr><center>oxi/{oxi_version}</center>
+<hr><center>{server_software}</center>
 <p>&nbsp;</p>
 <p>{realmsg}</p>
 </body>
@@ -607,7 +606,7 @@ class ProtocolFactory:
         
         try:
             writer.write(status_line.encode("utf-8"))
-            writer.write(f"Server: oxi/{oxi_version}\r\n".encode("utf-8"))
+            writer.write(f"Server: {server_software}\r\n".encode("utf-8"))
             writer.write(b"Content-Type: text/html; charset=utf-8\r\n")
             writer.write(f"Content-Length: {len(response)}\r\n\r\n".encode("utf-8"))
             writer.write(response.encode("utf-8"))
@@ -656,7 +655,7 @@ class ProtocolFactory:
                     <a href="/">Home</a>
                 </p>
                 <hr>
-                <p style="text-align: right;ont-size: 16px; margin-right 1em;">Oxi/{oxi_version}</p>
+                <p style="text-align: right;ont-size: 16px; margin-right 1em;">{server_software}</p>
                 <script>
                     setInterval(() => location.href = location.href, 10000);
                 </script>
@@ -665,7 +664,7 @@ class ProtocolFactory:
 """
         content_length = len(html)
         print(f"Writing to socket {content_length} bytes.\n")
-        writer.write(f"Server: oxi/{oxi_version}\r\n".encode("utf-8"))
+        writer.write(f"Server: {server_software}\r\n".encode("utf-8"))
         content_type = "text/html; charset=utf-8"
         writer.write(self.success_line.encode("utf-8"))
         writer.write(f"Content-Type: {content_type}\r\n".encode("utf-8"))
