@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-import asyncio, os, random, subprocess, re, mimetypes, errno, signal, hashlib, time
+import asyncio, os, sys, random, subprocess, re, mimetypes, errno, signal, hashlib, time
 from threading import Thread
 from typing import Callable
 from pprint import pprint
@@ -684,26 +684,29 @@ def fs_monitor():
 
     pyfiles = [open(str(entry), 'rb') for entry in parentdir.glob("*.py")]
     hashes = [hashlib.sha1(fd.read()).hexdigest() for fd in pyfiles]
+    for fd in pyfiles:
+        fd.close()
 
     while True:
         time.sleep(1)
         newpyfiles = [open(str(entry), 'rb') for entry in parentdir.glob("*.py")]
         if len(newpyfiles) != len(pyfiles):
+            for fd in newpyfiles:
+                fd.close()
             print(f"File count changed. Signaling server restart")
             time.sleep(0.5)  # Optional debounce
             os.execv(os.sys.executable, [os.sys.executable] + os.sys.argv)            # os.kill(os.getpid(), signal.SIGUSR1)
             # os.kill(os.getpid(), signal.SIGUSR1)
             # return
         newhashes = [hashlib.sha1(fd.read()).hexdigest() for fd in newpyfiles]
+        for fd in newpyfiles:
+            fd.close()
         if newhashes != hashes:
             print(f"File hashes changed. Signaling server restart")
             time.sleep(0.5)  # Optional debounce
             os.execv(os.sys.executable, [os.sys.executable] + os.sys.argv)            # os.kill(os.getpid(), signal.SIGUSR1)
             # os.kill(os.getpid(), signal.SIGUSR1)
             # return
-        else:
-            for fd in newpyfiles:
-                fd.close()
 
 ######################################################################################
 
@@ -756,18 +759,24 @@ async def run_dev_server(protocol: Callable = ProtocolFactory(),
 
         print("Oxi Server shut down cleanly.")
 
-async def runner():
+async def runner(port: int = oxi_port, host: str = oxi_host) -> None:
     # protocol = ProtocolFactory()
     # protocol.allow_dirlisting = False
     # await run_dev_server(protocol, host=oxi_host, port=oxi_port)
-    await run_dev_server(host=oxi_host, port=oxi_port) # Uses ProtocolFactory() by default
+    await run_dev_server(host=host, port=port) # Uses ProtocolFactory() by default
 
 def main():
     # Start the file system monitor in a separate thread
     fs_monitor_thread = Thread(target=fs_monitor, daemon=True)
     fs_monitor_thread.start()
     # Run the server
-    asyncio.run(runner())
+    port = oxi_port
+    if len(sys.argv) > 1:
+        try:
+            port = int(sys.argv[1])
+        except ValueError:
+            print(f"Invalid port number '{sys.argv[1]}'. Using default port {oxi_port}.")
+    asyncio.run(runner(port=port, host=oxi_host ))
 
 if __name__ == "__main__":
     main()
