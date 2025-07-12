@@ -34,4 +34,4 @@ As it stands in  version 0.2.33, Oxi acts just like a static server. A very effi
 
 Successive incarnations will provide the promised features.
 
-Next step: CGI handlingSuccessiv
+Next step: CGI handling
