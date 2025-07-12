@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-__version__ = "0.2.33"
+__version__ = "0.2.34"
 __author__ = "Domingo E. Savoretti"
 __email__ = "esavoretti@gmail.com"
 __license__ = "MIT"
