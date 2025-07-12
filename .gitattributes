@@ -3,6 +3,5 @@
 *.rb linguist-detectable=false
 *.pl linguist-detectable=false
 *.sh linguist-detectable=false
-[^.]* linguist-detectable=false
 
 *.md linguist-documentation
