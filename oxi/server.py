@@ -411,9 +411,13 @@ class ProtocolFactory:
                 await loop.sendfile(writer.transport, file_obj)
             except (AttributeError, NotImplementedError, RuntimeError) as e:
                 print(f"loop.sendfile() not available or failed ({e}), falling back to read/write")
-                return await send_windows()
-            await asyncio.to_thread(os.close, file_desc)
-            await finalize_writer(writer)
+                await send_windows()
+            finally:
+                try:
+                    await asyncio.to_thread(os.close, file_desc)
+                    await finalize_writer(writer)
+                except Exception as e:
+                    print(f"Error closing file descriptor: {e}")
 
         async def send_mac():
             sock = writer.get_extra_info("socket")
