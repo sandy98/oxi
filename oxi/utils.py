@@ -1,62 +1,66 @@
 #-*- coding: utf-8 -*-
-import re, asyncio, platform, threading, sys, termios
+import os
+import re, asyncio, base64, hashlib
 from functools import wraps
-from contextlib import contextmanager
-from http import HTTPStatus
 
 ######################################################################################
 
-http_status_dict = {h.value: h.phrase for h in HTTPStatus}
+def encrypt(word: str):
+    return base64.b64encode(hashlib.sha1(word.encode('utf-8')).digest())
 
 ######################################################################################
 
-def is_windows():
-    """
-    Check if the current operating system is Windows.
-    """
-    return platform.system() == 'Windows'
+def generate_csrf_token():
+    return hashlib.sha256(os.urandom(64)).hexdigest()
 
-def is_linux():
-    """
-    Check if the current operating system is Linux.
-    """
-    return platform.system() == 'Linux'
+######################################################################################
 
-def is_mac():
-    """
-    Check if the current operating system is macOS.
-    """
-    return platform.system() == 'Darwin'
-def is_unix():
-    """
-    Check if the current operating system is Unix-like.
-    """
-    return platform.system() in ['Linux', 'Darwin']
+def encode_image(image_data, image_type='image/jpeg'):
+    img_template = "data:{0};base64,{1}"
+    img_string = base64.b64encode(image_data).decode("utf-8")
+    return img_template.format(image_type, img_string)
 
-def is_posix():
-    """
-    Check if the current operating system is POSIX-compliant.
-    """
-    return os.name == 'posix'
-
-def is_nt():
-    """
-    Check if the current operating system is Windows NT.
-    """
-    return os.name == 'nt'
+######################################################################################
 
 
 ######################################################################################
 
-def to_bytes(text, encoding='utf-8'): 
+
+######################################################################################
+
+
+######################################################################################
+
+
+######################################################################################
+
+
+######################################################################################
+
+
+######################################################################################
+
+def to_bytes(text, encoding='utf-8') -> bytes:
     if type(text) == bytes:
         return text
     elif type(text) == int or type(text) == float:
         return str(text).encode(encoding)
     elif isinstance(text, (tuple, list)):
-        return list(map(to_bytes, text))
+        return b''.join(list(map(to_bytes, text)))
     else:
         return str(text).encode(encoding)
+
+######################################################################################
+
+def bytes_to_human_readable(size, decimal_places=2):
+    """Converts a size in bytes to a human-readable format (KB, MB, GB)."""
+    units = ("B", "KB", "MB", "GB", "TB")
+    i = 0
+    while size >= 1024 and i < len(units) - 1:
+        size /= 1024
+        i += 1
+    return f"{size:.{decimal_places}f} {units[i]}"
+
 
 ######################################################################################
 
@@ -89,42 +93,75 @@ async def aopen(filename:str, mode:str='r'):
 
 ######################################################################################
 
-@contextmanager
-def no_ctrlc_echo():
-    """
-    Context manager to suppress ^C echo in terminal when Ctrl+C is pressed.
-    Only works on POSIX terminals (Linux, macOS).
-    """
-    if not sys.stdin.isatty():
-        yield
-        return
+# class FormElement:
 
-    fd = sys.stdin.fileno()
-    try:
-        attrs = termios.tcgetattr(fd)
-        new_attrs = attrs[:]
-        new_attrs[3] = new_attrs[3] & ~termios.ECHOCTL  # Clear ECHOCTL
-        termios.tcsetattr(fd, termios.TCSANOW, new_attrs)
-        yield
-    finally:
-        termios.tcsetattr(fd, termios.TCSANOW, attrs)
+#     options = {
+#         'C': 'Text',
+#         'N': 'Number',
+#         'D': 'Date',
+#         'L': 'Logical',
+#         'O': 'Options'
+#     }
 
-######################################################################################
+#     def __init__(self, description: str, elemtype:str="C", options:str="C , N , D , L , O",
+#                  elemname:str="subitem", elemvalue:str="", elemid:int=0,  
+#                  p_class:str="renglon", label_class:str="large steelblue",
+#                  input_class:str="small"):
+#         self.description = description
+#         self.elemtype = "C"
+#         if elemtype in self.options:
+#             self.elemtype = elemtype
+#         else:
+#             raise ValueError("Element type must be one of 'C, N, D, L, O'")
+#         self.options = options
+#         self.name = elemname
+#         self.id = elemid
+#         self.value = elemvalue
+#         self.p_class = p_class
+#         self.label_class = label_class
+#         self.input_class = input_class
 
-class ResultThread(threading.Thread):
-    def __init__(self, *args, **kwargs):
-        self.result = None
-        super().__init__(*args, **kwargs)
+    
+#     def __repr__(self):
+#         instance_name = f"{self.name}-{self.id}"
+#         if self.elemtype == 'C':
+#             return f'''<input value="{self.value or ''}" style="font-size: 120%; height: 2em;" type="text" id="{instance_name}" name="{instance_name}" class="{self.input_class}"/>'''
+#         elif self.elemtype == 'N':
+#             return f'''<input value="{self.value or 0}" style="font-size: 120%; height: 2em; text-align: right;" type="number" id="{instance_name}" name="{instance_name}" style="text-align: right;" />'''
+#         elif self.elemtype == 'D':
+#             return f'''<input value="{self.value or ''}" style="font-size: 120%; height: 2em;" type="date" id="{instance_name}" name="{instance_name}" />'''
+#         elif self.elemtype == 'L':
+#             return f'''
+#               <span style="display: inline-flex; flex-direction: row; align-items: center;">
+#               <strong style="font-size: 1em;"> 
+#                 <label class="green" for="{self.description}-si">Sí</label>&nbsp;<input {'checked ' if str(self.value) == "1" else ' '}  id="{instance_name}-1" name="{instance_name}" style="transform: scale(2); margin: 5px;" type="radio" name="{self.description}" id="{self.description}-si" value="1">
+#                 <label class="red" for="{self.description}-no">No</label>&nbsp;<input {'checked ' if (str(self.value) == "0") or (not self.value) else ' '} id="{instance_name}-0" name="{instance_name}" style="transform: scale(2); margin: 5px;" type="radio" name="{self.description}" id="{self.description}-no" value="0">
+#               </strong>
+#               </span>
+#             '''
+#         else:
+#             if not self.options:
+#                 return f'<select class="{self.input_class}" style="font-size: 1.3em;" name="{self.description}">\n\t<option selected disabled value="">Debe proveer una opción.</option>\n</select>'
+#             else:
+#                 options = re.split(r"\s*,\s*", self.options)
+#                 optionstring = "\n".join([f'''\t<option {' selected ' if o == self.value else ' '} value="{o}">{o.title()}</option>''' for o in options])
+#                 return f'''<select class="{self.input_class}"  id="{instance_name}" name="{instance_name}" style="font-size: 1.2em; padding: 5px; padding-left: 10px; padding-right: 10px;">\n{optionstring}\n</select>'''
 
-    def run(self):
-        self.result = self._target(*self._args, **self._kwargs)
+#     def __str__(self):
+#         response = f'''
+#         <p class="{self.p_class}">
+#           <label class="{self.label_class}">{self.description}</label>
+#           {repr(self)}
+#         </p>
+#         '''
+#         return response
 
 ######################################################################################
 
 class SmartDict(dict):
     """SmartDict class with attributes equating dict keys"""
 
-    def __init__(self, d: dict = None, **kw):
+    def __init__(self, d: dict = {}, **kw):
         super().__init__(d or {}, **kw)
 
     def __getattr__(self, attr):
@@ -145,6 +182,4 @@ class SmartDict(dict):
 
     def copy(self):
         return SmartDict(super().copy())
-
-######################################################################################
 

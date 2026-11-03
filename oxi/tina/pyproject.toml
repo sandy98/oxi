@@ -1,0 +1,32 @@
+#pyproject.toml
+
+[build-system]
+requires      = ["setuptools>=61.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]   
+name = "tina"
+version = "0.9.53"
+description = "Python ASGI tiny framework with many built-in capabilities"
+readme = "README.md"
+authors = [{ name = "Domingo E Savoretti", email = "esavoretti@gmail.com" }]
+license = { file = "LICENSE" }
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+]
+keywords = ["web", "asgi", "wsgi", "app", "server", "session", "templates", "WebSocket"]
+dependencies = []
+requires-python = ">=3.6"
+
+[project.optional-dependencies]
+dev = ["uvicorn"]
+
+[project.urls]
+Homepage = "https://github.com/sandy98/tina"
+Wiki = "https://github.com/sandy98/tina/wiki"
+Demo = "https://tina.servepics.com"
+
+[project.scripts]
+tinapp = "tinapp:main"

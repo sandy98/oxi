@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<!-- saved from url=(0032)https://tina.servepics.com/login -->
+<html lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+        <title>CGI POST Demo</title>
+        <meta name="viewport" content="width=device-width ,  initial-scale=1.0 ,  shrink-to-fit=no">
+            <!--LINKS-->
+
+            <!--STYLES-->
+
+            <!--SCRIPTS-->
+        <style>
+            :root {
+                font-size: 1.3rem;
+            }
+
+            .navbar {
+                overflow: hidden;
+                background-color: #6f6f6f;
+            }
+
+            .navheader {
+                color: #e4e4e4; 
+                font-size: 150%; 
+                font-weight: bold;
+                float: left;
+                display: flex;
+                flex-direction: row;
+                align-items: center;
+                padding: 10px;
+            }
+
+            .navbar a {
+                float: left;
+                font-size: 16px;
+                color: white;
+                text-align: center;
+                padding: 14px 16px;
+                text-decoration: none;
+            }
+
+            .dropdown {
+                float: left;
+                overflow: hidden;
+            }
+
+            .dropdown .dropbtn {
+                font-size: 16px;
+                border: none;
+                outline: none;
+                color: white;
+                padding: 14px 16px;
+                background-color: inherit;
+                font-family: inherit;
+                margin: 0;
+            }
+
+            .navbar a:hover ,  .dropdown:hover .dropbtn {
+                background-color: steelblue;
+            }
+
+            .dropdown-content {
+                display: none;
+                position: absolute;
+                background-color: #f9f9f9;
+                min-width: 160px;
+                box-shadow: 0px 8px 16px 0px rgba(0 , 0 , 0 , 0.2);
+                z-index: 1;
+            }
+
+            .dropdown-content a {
+                float: none;
+                color: black;
+                padding: 12px 16px;
+                text-decoration: none;
+                display: block;
+                text-align: left;
+            }
+
+            .dropdown-content a:hover {
+                background-color: #dddddd;
+            }
+
+            .dropdown:hover .dropdown-content {
+                display: block;
+            }
+
+            #buttons {
+                display: flex;
+                flex-direction: row;
+                align-items: center;
+                justify-content: space-around;
+                padding: 10px;
+                border: black solid 1px;
+                border-radius: 8px;
+            }
+            button, [type="submit"], [type="reset"]  {
+                font-size: 1.2rem;
+            }
+            div#divall label, input {
+                font-size: 1.4rem;
+            }
+        </style>
+    </head>
+    <body style="font-family: sans-serif;" cz-shortcut-listen="true">
+        <div id="contents">
+            <div id="divall">
+                <form action="" id="frm-all" method="POST" enctype="multipart/form-data">
+                    <p>
+                        <label for="txt_username">Username &nbsp; &nbsp;</label>
+                        <input required type="text" id="txt_username" name="username">
+                    </p>
+                    <p>
+                        <label for="txt_passwd">Password &nbsp; &nbsp;</label>
+                        <input required type="password" id="txt_passwd" name="passwd">
+                    </p>
+                    <p>
+                        <label for="img_upload">Picture:&nbsp; &nbsp;</label>
+                        <input required type="file" id="img_upload" name="picture" accept="text/markdown, text/plain, image/png, image/jpeg">
+                    </p>
+                    <p>
+                        <input type="reset" value="Reset">
+                    </p>
+                </form>
+                <p id="buttons">
+                    <button data-action="/cgi-bin/cgiform.py" id="btn-py" >Submit to Python CGI</button>
+                    <button data-action="/cgiform.php" id="btn-php">Submit to PHP CGI</button>
+                    <button data-action="/handle_form" id="btn-oxi">Submit to Python OxiApp</button>
+                </p>
+            </div>
+            <!--
+            <div id="divpy">  
+                <form id="frmpy" action="cgi-bin/cgiform.py" method="POST" enctype="multipart/form-data">
+                    <p>
+                        <label for="txt_username">Username &nbsp; &nbsp;</label>
+                        <input required type="text" id="txt_username" name="username">
+                    </p>
+                    <p>
+                        <label for="txt_passwd">Password &nbsp; &nbsp;</label>
+                        <input required type="password" id="txt_passwd" name="passwd">
+                    </p>
+                    <p>
+                        <input type="submit" value="Submit to Python">
+                        <input type="reset" value="Reset">
+                    </p>
+                </form>
+            </div>
+            <hr>
+            <div id="divphp">  
+                <form id="frmphp" action="cgitest.php" method="POST" enctype="application/x-www-form-urlencoded">
+                    <p>
+                        <label for="txt_username">Username &nbsp; &nbsp;</label>
+                        <input required type="text" id="txt_username" name="username">
+                    </p>
+                    <p>
+                        <label for="txt_passwd">Password &nbsp; &nbsp;</label>
+                        <input required type="password" id="txt_passwd" name="passwd">
+                    </p>
+                    <p>
+                        <input type="submit" value="Submit to PHP">
+                        <input type="reset" value="Reset">
+                    </p>
+                </form>
+            </div>
+            -->
+            <hr>
+            <div style="text-align: center;">
+                <form action="/" method="get">
+                    <input type="submit" value="Home">
+                </form>
+            </div>
+        </div>
+    </div>
+    <script>
+        // document.querySelector('#frmpy').action += location.search
+        // document.querySelector('#frmphp').action += location.search
+        const frmall = document.querySelector('#frm-all')
+        const btnpy = document.querySelector('#btn-py');
+        const btnphp = document.querySelector('#btn-php');
+        const btnoxi = document.querySelector('#btn-oxi')
+        const dosubmit = (ev) => {
+            frmall.action = `${ev.target.dataset.action}${location.search ? location.search: ''}`
+            if (frmall.checkValidity()) {
+                frmall.submit();
+            } else {
+                frmall.reportValidity();
+            }
+            return true;
+        }
+        btnpy.addEventListener('click', dosubmit);
+        btnphp.addEventListener('click', dosubmit);
+        btnoxi.addEventListener('click', dosubmit);
+    </script>
+        
+    </body>
+</html>

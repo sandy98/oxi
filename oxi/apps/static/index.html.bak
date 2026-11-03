@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Index</title>
+        <style>
+            body {
+                font-family: Arial, Helvetica, sans-serif;
+            }
+            h1 {
+                font-weight: bold;
+                color: red;
+                text-align: center;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>The infamous index page</h1>
+    </body>
+</html>

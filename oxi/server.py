@@ -1,786 +1,1735 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import asyncio, os, sys, random, subprocess, re, mimetypes, errno, signal, hashlib, time
-from threading import Thread
+# master_worker.py
+import socket, struct, asyncio, os, sys, subprocess, json, importlib
+import inspect, io, hashlib, base64, logging, signal
+from urllib.parse import urlparse, unquote
+from http import HTTPStatus
+from time import strftime
 from typing import Callable
-from pprint import pprint
 from pathlib import Path
-from time import time as timestamp, strftime as tstrftime, strptime as tstrptime
-from datetime import datetime as dt
-from urllib.parse import urlparse, parse_qsl, unquote_plus
-from functools import wraps
+from email.utils import formatdate
+
+if __name__ == "__main__" and not __package__:
+    __package__ = "oxi"
+    
+uvloop_available:bool = False
+
+# Reset code (turns off all styling)
+RESET = '\033[0m'
+
+# Foreground standard colors
+BLACK   = '\033[30m'
+RED     = '\033[31m'
+GREEN   = '\033[32m'
+YELLOW  = '\033[33m'
+BLUE    = '\033[34m'
+MAGENTA = '\033[35m'
+CYAN    = '\033[36m'
+WHITE   = '\033[37m'
+
+async def log_msg(msg:str, fp=sys.stdout):
+    wmsg = f"{msg}\n"
+    fp.write(wmsg)
+    fp.flush()
+
+filepath = Path(__file__)
+# print(str(filepath))
+parentpath = filepath.parent
+# print(str(parentpath))
+grandparentpath = parentpath.parent
+# print(str(grandparentpath))
+examples_virtual_env_path = f"{parentpath}{os.path.sep}apps{os.path.sep}.examples-virtual-env/lib/python3.10/site-packages"
+options_virtual_env_path = f"{parentpath}{os.path.sep}.options-virtual-env/lib/python3.10/site-packages"
+
+if Path(examples_virtual_env_path).is_dir():
+    sys.path.insert(0, str(examples_virtual_env_path))
+if Path(options_virtual_env_path).is_dir():
+    sys.path.insert(0, str(options_virtual_env_path))
 
 try:
-    from . import  __version__ as oxi_version, __oxi_port__ as oxi_port, __oxi_host__ as oxi_host
-    from .config import Config
-    from .utils import (is_windows, is_linux, is_mac, 
-                        http_status_dict as status_dict, to_bytes, no_ctrlc_echo)
-    from .mp4parser import Mp4
+    import uvloop # pyright: ignore[reportMissingImports]
+    uvloop.install()
+    # if uvloop_available == False:
+    #     print(f"{CYAN}[Python Worker]{RESET} Asyncio using Uvloop.")
+    uvloop_available = True
 except ImportError:
-    from activate_this import oxi_env
-    if not oxi_env:
-        raise ImportError("Oxi environment not activated. Please activate the virtual environment.")
-    from oxi import  __version__ as oxi_version, __oxi_port__ as oxi_port, __oxi_host__ as oxi_host
-    from oxi.config import Config
-    from oxi.utils import (is_linux, is_windows, is_mac, 
-                           http_status_dict as status_dict, to_bytes, no_ctrlc_echo)
-    from oxi.mp4parser import Mp4
+    uvloop_available = False
+    # print(f"{CYAN}[Python Worker]{RESET} Uvloop not available.")
 
-server_software =f"Oxi/{oxi_version}"
+sys.path.insert(0, str(parentpath))
+sys.path.insert(0, str(grandparentpath))
 
-async def is_static(resource:str) -> bool:
-    """
-    Check if the resource exists in the file system.
-    """
-    return await asyncio.to_thread(os.path.exists, resource)
+__package__ = "oxi"
 
-async def is_file(resource:str) -> bool:
-    """
-    Check if the resource is a regular file.
-    """
-    exists = await asyncio.to_thread(os.path.exists, resource)
-    return exists and await asyncio.to_thread(os.path.isfile, resource)
+try:
+    from __about__ import __version__ as version
+    from __about__ import __config__ as config
+    from utils import to_bytes #, bytes_to_human_readable
+except Exception as exc:
+    excname = exc.__class__.__name__
+    print(f"{excname} exception: {exc}")
+    raise
 
-async def is_dir(resource:str) -> bool:
-    """
-    Check if the resource is a directory.
-    """
-    exists = await asyncio.to_thread(os.path.exists, resource)
-    return exists and await asyncio.to_thread(os.path.isdir, resource)
+VERSION = version
+CONFIG = config
 
-async def is_exe(resource:str) -> bool:
-    """
-    Check if the resource is an executable file.
-    """
-    exists = await asyncio.to_thread(os.path.exists, resource)
-    return exists and (await asyncio.to_thread(os.access, resource, os.X_OK))
+# 🚀 WebSocket Hardening: Maximum allowed size for a single frame's payload.
+# Prevents OOM attacks via malicious payload_len headers.
+MAX_WS_PAYLOAD = 1 * 1024 * 1024  # 1 MiB
 
-async def is_cgi_exe(resource:str, cgi_dir:str="cig-bin") -> bool:
-    """
-    Check if the resource is a CGI executable.
-    """
-    exists = await asyncio.to_thread(os.path.exists, resource)
-    if not exists:
-        return False
-    is_exec = await is_exe(resource)
-    if not is_exec:
-        return False
-    if not cgi_dir in resource:
-        return False
-    return True
+class SuppressBrokenPipeFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        # Intercept the specific asyncio write warnings
+        if record.name == "asyncio" and "socket.send() raised exception" in record.getMessage():
+            return False  # Drop the log completely
+        return True
 
-async def finalize_writer(writer):
-    try:
-        # writer.write(b"\r\n\r\n")
-        await writer.drain()
-    except Exception as e:
-        print(f"Writer drain error: {e}")
-    finally:
-        try:
-            writer.close()
-            await writer.wait_closed()
-        except Exception as e:
-            print(f"Writer close error: {e}")
+# Apply the filter to the standard asyncio logger
+asyncio_logger = logging.getLogger("asyncio")
+asyncio_logger.addFilter(SuppressBrokenPipeFilter())
 
-enctypes: tuple = (b"application/x-www-form-urlencoded", 
+enctypes:tuple = (b"application/x-www-form-urlencoded", 
                    b"multipart/form-data", 
                    b"application/json",
                    b"text/plain")
 
-strftime_template = "%a, %d  %b %Y %X %Z"
+strftime_template:str = "%a, %d  %b %Y %X %Z"
 
-original_zen = """Gur Mra bs Clguba, ol Gvz Crgref
+# global reference holder inside server.py
+_embedded_global_loop = None
 
-Ornhgvshy vf orggre guna htyl.
-Rkcyvpvg vf orggre guna vzcyvpvg.
-Fvzcyr vf orggre guna pbzcyrk.
-Pbzcyrk vf orggre guna pbzcyvpngrq.
-Syng vf orggre guna arfgrq.
-Fcnefr vf orggre guna qrafr.
-Ernqnovyvgl pbhagf.
-Fcrpvny pnfrf nera'g fcrpvny rabhtu gb oernx gur ehyrf.
-Nygubhtu cenpgvpnyvgl orngf chevgl.
-Reebef fubhyq arire cnff fvyragyl.
-Hayrff rkcyvpvgyl fvyraprq.
-Va gur snpr bs nzovthvgl, ershfr gur grzcgngvba gb thrff.
-Gurer fubhyq or bar-- naq cersrenoyl bayl bar --boivbhf jnl gb qb vg.
-Nygubhtu gung jnl znl abg or boivbhf ng svefg hayrff lbh'er Qhgpu.
-Abj vf orggre guna arire.
-Nygubhtu arire vf bsgra orggre guna *evtug* abj.
-Vs gur vzcyrzragngvba vf uneq gb rkcynva, vg'f n onq vqrn.
-Vs gur vzcyrzragngvba vf rnfl gb rkcynva, vg znl or n tbbq vqrn.
-Anzrfcnprf ner bar ubaxvat terng vqrn -- yrg'f qb zber bs gubfr!"""
+_lifespan_ready = False
 
-zen = """
-The Zen of Python, by Tim Peters
+class LifespanStartupError(Exception):
+    """Raised when an ASGI app fails to complete its lifespan startup."""
+    pass
 
-Beautiful is better than ugly.
-Explicit is better than implicit.
-Simple is better than complex.
-Complex is better than complicated.
-Flat is better than nested.
-Sparse is better than dense.
-Readability counts.
-Special cases aren't special enough to break the rules.
-Although practicality beats purity.
-Errors should never pass silently.
-Unless explicitly silenced.
-In the face of ambiguity, refuse the temptation to guess.
-There should be one-- and preferably only one --obvious way to do it.
-Although that way may not be obvious at first unless you're Dutch.
-Now is better than never.
-Although never is often better than *right* now.
-If the implementation is hard to explain, it's a bad idea.
-If the implementation is easy to explain, it may be a good idea.
-Namespaces are one honking great idea -- let's do more of those!
-"""
-
-
-class ProtocolFactory: 
+def get_rfc_date() -> str:
     """
-    ProtocolFactory class to handle the server protocol.
+    Returns an HTTP header date in RFC 7231 format (GMT).
+    Example: 'Tue, 27 Oct 2026 14:00:22 GMT'
     """
-    
-    success_line = "HTTP/1.1 200 OK\r\n"
-    partial_line = "HTTP/1.1 206 Partial Content\r\n"
-    bad_request_line = "HTTP/1.1 400 Bad Request\r\n"
-    not_implemented_line = "HTTP/1.1 501 Not Implemented\r\n"
-    forbidden_line = "HTTP/1.1 403 Forbidden\r\n"
-    moved_line = "HTTP/1.1 301 Moved Permanently\r\n"
-    moved_temporary_line = "HTTP/1.1 302 Moved Temporarily\r\n"
-    error_line = "HTTP/1.1 500 Internal Server Error\r\n"
-    not_found_line = "HTTP/1.1 404 Not Found\r\n"
+    return formatdate(timeval=None, localtime=False, usegmt=True)
 
-    @property
-    def base_dir(self) -> str:
-        if not os.path.exists(self._base_dir):
-            self._base_dir = ''
-        return f"{os.path.sep}{self._base_dir}"
+def parse_http_stream(read_line_func) -> dict:
+    """
+    Parser HTTP unificado y genérico. 
+    Recibe una función de lectura de línea para independizarse del tipo de transporte.
+    """
+    global version
 
-    @base_dir.setter
-    def base_dir(self, value: str) -> None:
-        if os.path.exists(value):
-            self._base_dir = value
-        else:
-            raise ValueError(f"Base directory '{value}' does not exist.")
-
-    @property
-    def full_base_dir(self) -> str:
-        return f"{self.cwd}{self.base_dir}"
-
-    async def has_index(self):
-        candidates = self.index_files if hasattr(self, 'index_files') else ['index.html', 'index.htm']
-        full_candidates = [os.path.join(self.full_base_dir, f) for f in candidates]
-        for candidate in full_candidates:
-            if await is_file(candidate):
-                return True, candidate
-        return False, None
-    
-    def __init__(self, app: Callable = None, *, base_dir: str = None):
-        self.app = app
-        if self.app:
-            self.app._protocol = self
-        self.cwd = os.getcwd()
-
-        for k in Config.keys():
-            setattr(self, k, Config[k])
+    try:
+        initial_line_bytes = read_line_func()
+        if not initial_line_bytes:
+            return {}
+                 
+        initial_line = to_bytes(initial_line_bytes).decode('latin-1').strip()
+        parts = initial_line.split(" ")
+        if len(parts) < 3:
+            return {}
+            
+        method, complete_uri, protocol = parts[0], parts[1], parts[2]
         
-        self._base_dir = base_dir or (self.static_dir if hasattr(self, 'static_dir') else 'static')
-        self.version = oxi_version
-        self.zen = zen
-        self.original_zen = original_zen
-        self.strftemplate = strftime_template
-        self.enctypes = enctypes
-
-    async def __call__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
-        """
-        Handle the incoming request and send a response.
-        """
-        try:
-            method, path, protocol = await self.get_request_line(reader)
-            parsed = urlparse(path)
-            path = parsed.path
-            query = parsed.query
-            if query:
-                query = dict(parse_qsl(query))
-            else:
-                query = {}
-            netloc = parsed.netloc
-
-        except ValueError as e:
-            print(f"Error parsing request line: {e}")
-            return await self.send_status_response(writer, status_code=400, msg=str(e))
-        print(f"Received request: {method} {path} {protocol}")
-        if method not in ["HEAD", "GET", "POST", "PUT", "PATCH", "DELETE"]:
-            msg = f"Method {method} not allowed."
-            print(msg)
-            return await self.send_status_response(writer, status_code=405, msg=msg)
-
-        try:
-            request_headers_block= await self.get_headers_block(reader)
-            # print(f"\nHeaders block:\n{request_headers_block.decode('utf-8')}\n\n")
-        except ValueError as e:
-            print(f"Error parsing  request headers: {e}")
-            return await self.send_status_response(writer, status_code=400, msg=str(e))
-        request_headers = await self.parse_headers(request_headers_block)
-        if path == "/oxiserver_demo" and method == "GET":
-            print(f"Serving Oxi Server demo page.")
-            return await self.oxiserver_demo(writer=writer)
-        else:
-            fullpath = os.path.join(self.full_base_dir, path.lstrip("/").replace("/", os.path.sep)) 
-            if await is_file(fullpath):
-                if not await is_cgi_exe(fullpath, self.cgi_dir):
-                    if method == "GET":
-                        print(f"Serving file: {fullpath}")
-                        return await self.send_file(writer=writer, fullpath=fullpath, headers=request_headers)
-                    else:
-                        print(f"Method {method} not allowed for file: {fullpath}")
-                        return await self.send_status_response(writer, status_code=405, msg=f"Method {method} not allowed for file.")  
-                else:
-                    print(f"Serving CGI executable: {fullpath}")
-                    return await self.send_file(writer=writer, fullpath=fullpath, headers=request_headers)
-            elif path == "/":
-                exists, index_file = await self.has_index()
-                if exists:
-                    print(f"Serving index file: {index_file}")
-                    return await self.send_file(writer=writer, fullpath=index_file, headers=request_headers)
-                else:
-                    if not self.allow_dirlisting:
-                        print(f"Directory listing not allowed: {fullpath}")
-                        return await self.send_status_response(writer, status_code=403, msg="Directory listing not allowed.")
-                    print(f"Serving static directory: {self.static_dir}")
-                    return await self.send_directory(writer, path=path, dirpath=self.full_base_dir)
-            elif await is_dir(fullpath):
-                if not self.allow_dirlisting:
-                    print(f"Directory listing not allowed: {fullpath}")
-                    return await self.send_status_response(writer, status_code=403, msg="Directory listing not allowed.")
-                print(f"Serving directory: {fullpath}")
-                return await self.send_directory(writer, path=path, dirpath=fullpath)
-            else:
-                if self.app is not None:
-                    print(f"Serving app: {self.app.name}")
-                    return await self.app(reader=reader, writer=writer)
-                else:
-                    print(f"File {path} not found.")
-                    return await self.send_status_response(writer, status_code=404, msg=f"Resource '{path}' not found.")  
-
-    @classmethod
-    async def send_directory(cls, writer: asyncio.StreamWriter, path: str, dirpath: str):
+        raw_path = complete_uri
+        query_string = ""
+        if "?" in complete_uri:
+            raw_path, query_string = complete_uri.split("?", 1)
+            
+        path_decoded = unquote(raw_path)
         
-        async def get_file_details(entry):
-            fullpath = dirpath + os.path.sep + entry
-            size = await asyncio.to_thread(os.path.getsize,fullpath)
-            ret = f'<span style="text-align: right;" class="black">{size:,} bytes</span>'
-            return ret
-        
-        pth = Path(path.strip('/'))
-        prevdir = ("/" + str(pth.parent)) if path != '/' else '/'
-        body = f"""
-            <!DOCTYPE html>
-            <html><head><title>Directory Listing</title>
-            <style>
-                body {{
-                    background-color: #f0f0f0;
-                    font-family: Helvetica, Arial, sans-serif;
-                    font-size: 16px;
-                }}
-                .green {{
-                    color: green;
-                }}
-                .silver {{
-                    color: silver;
-                }}
-                .black {{
-                    color: black;
-                }}
-                .renglon_dirlist {{
-                    margin-left: 1em;
-                    width: 50%;
-                    max-width: 50%;
-                    display: flex;
-                    flex-direction: row;
-                    justify-content: space-between;
-                    align-items: center;
-                    list-style-type: none;
-                    font-size: 150%;
-                    margin-bottom: 0.5em;
-                }}
-                a.link {{
-                    text-decoration: none;
-                    color: steelblue;
-                    font-weight: bold;
-                }}
-                a.link:hover {{
-                    color: black;
-                }}
-                @media (max-width: 798px) {{
-                    .renglon_dirlist {{
-                        width: 90%;    
-                        max-width: 90%;
-                    }}
-                }}
-            </style>
-            </head><body style="margin-left: 1em; margin-right: 1em;">
-            <h2>Directory listing for <span class="green">.{str(path)}</span></h2></hr>
-            <hr>
-            <p style="margin-bottom: 1em; text-align: center; font-family: Times New Roman; font-size: 16px;">{server_software}</p>
-            <hr>
-            <ul>
-                <li class="renglon_dirlist"><a class="link" title="Home" href="/">.</a></li>
-                <li class="renglon_dirlist"><a class="link" title="{str(prevdir)}" href="{str(prevdir)}">..</a></li>
-        """
-        entries = await asyncio.to_thread(os.listdir, dirpath)
-        entries.sort()
-        entries.sort(key=lambda e: os.path.isdir(dirpath + os.path.sep + e), reverse=True)
-        for entry in entries:
-            body += f'''
-            <li class="renglon_dirlist">
-                <a class="link" href="{path + (os.path.sep if path != '/' else '') + entry}">{entry}</a>
-                {'<span class="silver">[DIR]</span>' if (await asyncio.to_thread(os.path.isdir, dirpath + os.path.sep + entry)) else (await get_file_details(entry))}
-            </li>'''
-        body += "</ul></body></html>"
-        body_len = len(body)
-        
-        # print(f"\n(PID {os.getpid()}) {method} {pth} request from {remote_ip}({remote_host}) {time.strftime('%Y-%m-%d %H:%M:%S')} - 200")
-        
-        try:
-            writer.write(cls.success_line.encode("utf-8"))
-            writer.write(f"Server: {server_software}\r\n".encode("utf-8"))
-            writer.write(b"content-type: text/html; charset=utf-8\r\n"),
-            writer.write(f"content-length: {str(body_len)}\r\n".encode('utf-8'))
-            await writer.drain()
-        except Exception as e:
-            print(f"Error writing directory listing headers: {e}")
-            # return await self.send_status_response(writer, status_code=500, reason="Internal Server Error", msg=str(e))
-            return
-        try:
-            writer.write(b"\r\n")
-            await writer.drain()
-            writer.write(to_bytes(body))
-            await writer.drain()
-        except Exception as e:
-            print(f"Error directory listing writing body: {e}")
-            # return await self.send_status_response(writer, status_code=500, reason="Internal Server Error", msg=str(e))
-
-    @classmethod
-    async def send_file(cls, writer: asyncio.StreamWriter, fullpath: str, 
-                        headers: dict = None, forced: bool = False) -> None:
-
-        content_type = mimetypes.guess_type(fullpath)[0] or "application/octet-stream"
-        if content_type == 'video/mp4' and not forced:
-            return await cls.send_mp4(writer=writer, fullpath=fullpath, headers=headers)
-        file_desc = await asyncio.to_thread(os.open, fullpath, os.O_RDONLY | os.O_NONBLOCK)
-        file_stat = await asyncio.to_thread(os.fstat, file_desc)
-        body_len = file_stat.st_size
-        try:
-            writer.write(cls.success_line.encode("utf-8"))
-            writer.write(f"Server: {server_software}\r\n".encode("utf-8"))
-            writer.write(f"Content-Type: {content_type}\r\n".encode("utf-8"))
-            writer.write(f"Content-Length: {body_len}\r\n".encode("utf-8"))
-            writer.write("Access-Control-Allow-Origin: *\r\n".encode("utf-8"))
-            writer.write(b"\r\n")
-            await writer.drain()
-        except Exception as e:
-            print(f"Error writing headers: {e}")
-            await asyncio.to_thread(os.close, file_desc)
-            # return await self.send_status_response(writer, status_code=500, reason="Internal Server Error", msg=str(e))
-            return
-        
-        async def send_windows():
-            remaining = body_len
-            while remaining > 0:
-                chunk = min(cls.chunk_size, remaining)
-                try:
-                    data = os.read(file_desc, chunk)
-                    if not data:
-                        break
-                    writer.write(data)
-                    await writer.drain()
-                    remaining -= len(data)
-                except BlockingIOError as e:
-                    if e.errno == errno.EAGAIN:
-                        await asyncio.sleep(0)
-                        continue
-            await asyncio.to_thread(os.close, file_desc)
-            await finalize_writer(writer)
-
-        async def send_linux():
-            loop = asyncio.get_running_loop()
-            try:
-                file_obj = open(file_desc, "rb", closefd=False)
-                await loop.sendfile(writer.transport, file_obj)
-            except (AttributeError, NotImplementedError, RuntimeError) as e:
-                print(f"loop.sendfile() not available or failed ({e}), falling back to read/write")
-                await send_windows()
-            finally:
-                try:
-                    await asyncio.to_thread(os.close, file_desc)
-                    await finalize_writer(writer)
-                except Exception as e:
-                    print(f"Error closing file descriptor: {e}")
-
-        async def send_mac():
-            sock = writer.get_extra_info("socket")
-            sock_fd = sock.fileno() 
-            offset = 0
-            while offset < body_len:
-                sent = os.sendfile(sock_fd, file_desc, offset, body_len - offset)
-                if sent == 0:
-                    break
-                offset += sent
-            await asyncio.to_thread(os.close, file_desc)
-            await finalize_writer(writer)
-
-        if is_windows():
-            return await send_windows()
-        
-        if is_linux():
-            # return await send_mac()
-            return await send_linux()
-        
-        if is_mac():
-            return await send_mac()
-
-    @classmethod
-    async def send_mp4(cls, writer: asyncio.StreamWriter, fullpath: str, headers: dict = None) -> None:
-        mp4 = Mp4(fullpath)
-        boundaries = await mp4.faststart_boundaries
-        response_line = cls.partial_line
-        start, end = 0, mp4.filesize - 1
-
-        sec_fetch_dest = headers.get("sec-fetch-dest", None)
-        if sec_fetch_dest:
-            if sec_fetch_dest != "video":
-                response_line = cls.success_line
-        bytesrange = headers.get("range")
-        if not bytesrange:
-            print(f"Range header not found. Sending full file.")
-            start = 0
-            end = 0
-            # boundaries = await mp4.faststart_boundaries
-            for entry in boundaries:
-                moov_bounds = entry.get('moov')
-                if moov_bounds:
-                    end = moov_bounds[1] - 1
-                    break
-            if end == 0:
-                end = mp4.filesize - 1
-        else:
-            bytesrange = bytesrange.lstrip("bytes=")
-            start, end = bytesrange.split("-")
-            start = int(start)
-            end = int(end) if end else mp4.filesize - 1
-            if start < 0 or end >= mp4.filesize or start > end:
-                print(f"Invalid range: {bytesrange}. Sending full file.")
-                start, end = 0, mp4.filesize - 1
-        length = end - start + 1
-        try:
-            writer.write(response_line.encode("utf-8"))
-            writer.write(f"Server: {server_software}\r\n".encode("utf-8"))
-            writer.write(b"Content-Type: video/mp4\r\n")
-            # writer.write(b"Access-Control-Allow-Origin: *\r\n")
-            writer.write(b"Accept-Ranges: bytes\r\n")
-            print(f'\nSENDING video content:\tContent-Range: bytes {start}-{end}/{mp4.filesize}\n')
-            writer.write(f'Content-Range: bytes {start}-{end}/{mp4.filesize}\r\n'.encode('utf-8'))                        
-            writer.write(f"Content-Length: {length}\r\n\r\n".encode("utf-8"))
-            await writer.drain()
-        except Exception as e:
-            print(f"Error writing mp4 headers: {e}")
-            # return await cls.send_status_response(writer, status_code=500, reason="Internal Server Error", msg=str(e))
-            return
-
-        stream = mp4.async_stream_range(start, end)
-        written = 0
-        async for chunk in stream:
-            try:
-                writer.write(chunk)
-                await writer.drain()
-                written += len(chunk)
-                # print(f"Written {len(chunk)} bytes for a total of {written} out of {mp4.filesize}.")
-            except Exception as e:
-                print(f"Error writing mp4 chunk: {e}")
-                # return await cls.send_status_response(writer, status_code=500, reason="Internal Server Error", msg=str(e))
-                break
-        try:    
-            writer.close()
-            await writer.wait_closed()
-        except Exception as e:
-            print(f"Error closing writer: {e}")
-            # return await cls.send_status_response(writer, status_code=500, reason="Internal Server Error", msg=str(e))
-        finally:
-            print(f"{written} bytes written out of {mp4.filesize}.")
-            return
-
-    @classmethod    
-    async def get_request_line(cls, reader: asyncio.StreamReader) -> tuple[str]:
-        """
-        Read the request line from the client.
-        """
-        retries = 0
-        max_retries = 3
-        while True:
-            try:
-                request_line = await reader.readuntil(b"\r\n")
-                break
-            except asyncio.IncompleteReadError as e:
-                retries += 1
-                print(f"Retrying to read request line: {e}\nAttempt {retries}/{max_retries}")
-                if retries >= max_retries:
-                    request_line = ''
-                    break
-                else:
-                    await asyncio.sleep(0)
-                    continue
-        if not request_line:
-            raise ValueError("Request line is incomplete after multiple attempts.")
-        request_line = request_line.rstrip(b"\r\n")
-        if not request_line:
-            raise ValueError("Request line is empty after stripping.")
-        request_line = request_line.decode("utf-8").strip()
-        if not request_line:
-            raise ValueError("Request line is empty after decoding.")
-        try:
-            # self.request_line = request_line
-            method, path, protocol = re.split(r"\s+", request_line)
-        except ValueError:
-            raise ValueError("Request line is malformed. Unable to split into method, path, and protocol.")
-        if not method or not path or not protocol:
-            raise ValueError("Request line is malformed. Missing method, path, or protocol.")
-        return method.upper(), unquote_plus(path), protocol
-
-    @classmethod
-    async def get_headers_block(cls, reader: asyncio.StreamReader) -> bytes:
-        """
-        Read header lines from the client.
-        """
-        retries = 0
-        max_retries = 3
-        while True:
-            try:
-                headers_block = await reader.readuntil(b"\r\n\r\n")
-                break
-            except asyncio.IncompleteReadError as e:
-                retries += 1
-                print(f"Retrying to read header blocks: {e}\nAttempt {retries}/{max_retries}")
-                if retries >= max_retries:
-                    headers_block = b''
-                    break
-                else:
-                    await asyncio.sleep(0)
-                    continue
-        if not headers_block:
-            raise ValueError("Headers block is incomplete after multiple attempts.")
-        headers_block = headers_block.rstrip(b"\r\n\r\n")
-        if not headers_block:
-            raise ValueError("Headers block is empty after stripping.")
-        # self.headers_block = headers_block
-        return headers_block
-
-    @classmethod
-    async def parse_headers(cls, headers_block: bytes) -> dict:
-        """
-        Parse the headers block into a dictionary.
-        """
         headers = {}
-        lines = headers_block.decode("utf-8").split("\r\n")
-        for line in lines:
-            if ": " in line:
-                key, value = line.split(": ", 1)
-                headers[key.strip().lower()] = value.strip()
-        return headers
-    
-    @classmethod
-    async def send_status_response(cls, writer: asyncio.StreamWriter, status_code: int=404, reason: str = None, msg:str="") -> None:
-        reason = reason or status_dict.get(status_code, "Unknown Status")
-        status_line = f"HTTP/1.1 {status_code} {reason}\r\n"
-        realmsg = msg + '\r\n' if len(msg) else ''
-        response = f"""
-<html>
-<head><title>{status_code} {reason}</title></head>
-<body style="background-color: #f0f0f0; font-family: Helvetica, Arial, sans-serif;">
-<center><h1>{status_code} {reason}</h1></center>
-<hr><center>{server_software}</center>
-<p>&nbsp;</p>
-<p>{realmsg}</p>
-</body>
-</html>"""
-        if writer.is_closing():
-            print(f"Writer is closing. Cannot send status response.")
-            return
-        
-        try:
-            writer.write(status_line.encode("utf-8"))
-            writer.write(f"Server: {server_software}\r\n".encode("utf-8"))
-            writer.write(b"Content-Type: text/html; charset=utf-8\r\n")
-            writer.write(f"Content-Length: {len(response)}\r\n\r\n".encode("utf-8"))
-            writer.write(response.encode("utf-8"))
-            await writer.drain()
-        except Exception as e:
-            print(f"Error writing status response: {e}")
-            return
-        try:
-            writer.close()
-            await writer.wait_closed()
-        except Exception as e:
-            print(f"Error closing writer: {e}")
-            return
+        while True:
+            line_bytes = read_line_func()
+            line = to_bytes(line_bytes).decode('latin-1').strip()
+            if not line:
+                break
+            if ":" in line:
+                k, v = line.split(":", 1)
+                headers[k.strip()] = v.strip()
+                
+        return {
+            "version": version,
+            "method": method,
+            "path": path_decoded,
+            "raw_path": raw_path,
+            "query_string": query_string,
+            "protocol": protocol,
+            "headers": headers
+        }
+    except Exception:
+        return {}
 
-    async def oxiserver_demo(self, writer: asyncio.StreamWriter = None) -> None:
-        """
-        Send a demo HTML page to the client.
-        """
-        if writer is None:
-            raise ValueError("writer is None. Please provide a valid writer.")
-        # Let's begin slowly
-        exists = await is_static("./static/img")
-        if not exists:
-            msg = "Static directory not found. Please create a static directory with images."
-            return await self.send_status_response(writer, status_code=404, msg=msg)
-        listdir = await asyncio.to_thread(os.listdir, "./static/img")
-        listdir = [entry for entry in listdir if mimetypes.guess_type(entry)[0] and mimetypes.guess_type(entry)[0].startswith("image")]
-        img_src = random.choice(listdir)
-        newzen = random.choice([self.zen, self.zen, self.zen, self.original_zen]).replace("\n", "<br>")
-        html = f"""
-        <html>
-            <head>
-                <title>Oxi Server</title>
-                <!--<link rel="stylesheet" href="static/css/style.css">-->
-            </head>
-            <body style="background-color: #f0f0f0; font-size: 120%; font-family: Helvetica, Arial, sans-serif;">
-                <div style="text-align: center;">
-                    <h1 style="color: steelblue;">Welcome to <strong style="color: red;">Oxi Server</strong>!</h1>
-                    <img src="/img/{img_src}" alt="Random Image" width="20%" style="border-radius: 20px;">
-                </div>
-                <h2>Version: <strong>{self.version}</strong></h2>
-                <hr/>
-                <p>{newzen}</p>
-                <hr>
-                <p style="text-align: center;">
-                    <a href="/">Home</a>
-                </p>
-                <hr>
-                <p style="text-align: right;ont-size: 16px; margin-right 1em;">{server_software}</p>
-                <script>
-                    setInterval(() => location.href = location.href, 10000);
-                </script>
-            </body>
-        </html>
-"""
-        content_length = len(html)
-        print(f"Writing to socket {content_length} bytes.\n")
-        writer.write(f"Server: {server_software}\r\n".encode("utf-8"))
-        content_type = "text/html; charset=utf-8"
-        writer.write(self.success_line.encode("utf-8"))
-        writer.write(f"Content-Type: {content_type}\r\n".encode("utf-8"))
-        writer.write(f"Content-Length: {content_length}\r\n".encode("utf-8"))
-        writer.write(b"\r\n")
-        writer.write(html.encode("utf-8"))
-        writer.write(b"\r\n")
+def parse_http_raw_text(raw_text: str) -> dict:
+    """
+    El único y verdadero micro-parser HTTP de la Suite Oxi.
+    Procesa un bloque de texto crudo y genera el diccionario request estandarizado.
+    """
+    global version
+    try:
+        lines = raw_text.splitlines()
+        if not lines:
+            return {}
+            
+        initial_line = lines[0].strip()
+        parts = initial_line.split(" ")
+        if len(parts) < 3:
+            return {}
+            
+        method, complete_uri, protocol = parts[0], parts[1], parts[2]
+        
+        raw_path = complete_uri
+        query_string = ""
+        if "?" in complete_uri:
+            raw_path, query_string = complete_uri.split("?", 1)
+            
+        path_decoded = unquote(raw_path)
+        
+        headers = {}
+        for line in lines[1:]:
+            line = line.strip()
+            if not line:
+                break
+            if ":" in line:
+                k, v = line.split(":", 1)
+                headers[k.strip()] = v.strip()
+                
+        return {
+            "version": version,
+            "method": method,
+            "path": path_decoded,
+            "raw_path": raw_path,
+            "query_string": query_string,
+            "protocol": protocol,
+            "headers": headers
+        }
+    except Exception:
+        return {}
+
+async def parse_standalone_request(reader: asyncio.StreamReader) -> dict:
+    try:
+        # Native, atomic read optimized by asyncio's C-level buffers.
+        # It guarantees the entire HTTP header block is captured up to the blank line boundary.
+        raw_buffer = await reader.readuntil(b'\r\n\r\n')
+        
+        if not raw_buffer:
+            return {}
+            
+        return parse_http_raw_text(to_bytes(raw_buffer).decode('latin-1'))
+    except asyncio.IncompleteReadError as e:
+        # Handles edge cases where the client drops the connection prematurely
+        if e.partial:
+            return parse_http_raw_text(to_bytes(e.partial).decode('latin-1'))
+        return {}
+    except Exception:
+        return {}
+
+async def log_access(scope: dict, status_code: int, bytes_sent: int):
+    """
+    Generates and flushes an upstream access log matching Nginx compliance structure:
+    181.199.145.251 - - [31/Aug/2026:17:02:19 -0300] "GET /favicon.ico HTTP/1.1" 200 76678
+    """
+    # Extraer IP remota (la IP del cliente real procesada en get_scope)
+    client_tuple = scope.get("client", (b"127.0.0.1", 0))
+    remote_addr = to_bytes(client_tuple[0]).decode('latin-1').rjust(15) if isinstance(client_tuple, (list, tuple)) else "127.0.0.1".rjust(15)
+    
+    # Reconstruir la línea de petición HTTP original
+    method = scope.get("method", "GET").upper()
+    path = scope.get("path", "/")
+    
+    # Si hay query string, la concatenamos para que salga idéntico en el request path
+    query_string = to_bytes(scope.get("query_string", b"")).decode('latin-1')
+    full_path = f"{path}?{query_string}" if query_string else path
+    
+    http_version = scope.get("http_version", "1.1")
+    request_line = f'{method} {full_path} HTTP/{http_version}'
+    
+    # Ensamblar la cadena final estilo Nginx
+    nginx_log_line = f'{CYAN}{remote_addr}{RESET} - - [{get_styled_date()}] "{request_line}" {status_code} {bytes_sent}'
+    
+    # Escribir al canal de logs del sistema de forma asíncrona
+    await log_msg(nginx_log_line)
+
+def is_websocket_upgrade(request):
+    has_upgrade_ws = False
+    has_connection_upgrade = False
+    
+    for (k, v) in request.get("headers", {}).items():
+        k_low = k.lower()
+        v_low = v.lower()
+        
+        # The connection header can contain multiple tokens like "keep-alive, Upgrade"
+        if k_low == "upgrade" and v_low == "websocket":
+            has_upgrade_ws = True
+        elif k_low == "connection" and "upgrade" in v_low:
+            has_connection_upgrade = True
+        
+    return has_upgrade_ws and has_connection_upgrade
+
+def is_wsgi(callable_app) -> bool:
+    """
+    Ernesto's deterministic signature inspector for classical WSGI contracts.
+    """
+    if not callable_app:
+        return False
+    if not callable(callable_app):
+        return False
+    try:
+        params = list(inspect.signature(callable_app).parameters.items())
+        if len(params) != 2:
+            return False
+        return params[0][0].lower() == "environ" and params[1][0].lower() == "start_response"
+    except Exception:
+        return False
+
+def scope_to_environ(scope: dict, body_bytes: bytes) -> dict:
+    """
+    Translates an ASGI metadata scope dictionary into a standard WSGI PEP 3333 environ.
+    """
+    headers = scope.get("headers", [])
+    headers_dict = {to_bytes(k).decode('latin-1').lower(): to_bytes(v).decode('latin-1') for k, v in headers}
+    
+    # Reconstruct the query string parameter block
+    query_bytes = to_bytes(scope.get("query_string", b""))
+    query_string = query_bytes.decode('latin-1')
+
+    environ = {
+        "REQUEST_METHOD": scope.get("method", "GET").upper(),
+        "SCRIPT_NAME": "",
+        "PATH_INFO": scope.get("path", "/"),
+        "QUERY_STRING": query_string,
+        "SERVER_NAME": scope.get("server_name", f"OxiServer/{scope.get('oxi_version', '0.0.1')}"),
+        "SERVER_PORT": str(scope.get("server", ["localhost", 8000])[1]),
+        "SERVER_PROTOCOL": "HTTP/1.1",
+        "wsgi.version": (1, 0),
+        "wsgi.url_scheme": scope.get("scheme", "http"),
+        "wsgi.input": io.BytesIO(body_bytes),
+        "wsgi.errors": sys.stderr,
+        "wsgi.multithread": False,
+        "wsgi.multiprocess": False,
+        "wsgi.run_forever": True,
+        "CONTENT_LENGTH": str(len(body_bytes)),
+        "CONTENT_TYPE": headers_dict.get("content-type", "")
+    }
+
+    # Map dynamic incoming HTTP headers with the WSGI HTTP_ prefix
+    for k, v in headers_dict.items():
+        if k not in ["content-type", "content-length"]:
+            # env_key = "HTTP_" * uppercase(replace(k, "-" => "_"))
+            env_key = "HTTP_" + k.replace("-", "_").upper()
+            environ[env_key] = v
+
+    return environ
+
+def ancillary2sock(ancdata, family=socket.AF_INET, type=socket.SOCK_STREAM):
+    """
+    Abstracted Component: Extracts a raw file descriptor from POSIX ancillary data 
+    (SCM_RIGHTS) and reconstructs it into a live, native Python socket object.
+    """
+    for cmsg_level, cmsg_type, cmsg_data in ancdata:
+        if cmsg_level == socket.SOL_SOCKET and cmsg_type == socket.SCM_RIGHTS:
+            raw_fd = struct.unpack("i", cmsg_data)[0]
+            return socket.fromfd(raw_fd, family, type)
+    return None
+
+def get_styled_date():
+    # El formato %b devuelve el nombre del mes abreviado en inglés (Jan, Feb, Aug, etc.)
+    # %z añade la desviación de la zona horaria actual (ej: -0300)
+    return strftime("%d/%b/%Y:%H:%M:%S %z")
+
+def load_application_target(target_str):
+    """
+    Dynamically loads the specified python target module and references 
+    the targeted ASGI application variable.
+    """
+    if target_str == "none" or len(target_str) == 0:
+        return None
+    try:
+        module_name, app_name = target_str.split(":")
+        module = importlib.import_module(module_name)
+        filename = getattr(module, "__file__", "")
+        filepath = Path(filename).resolve()
+        os.chdir(filepath.parent)  # Change CWD to the module's directory for relative imports
+        sys.stdout.write(f"\n{CYAN}[PYTHON]{RESET} Current working directory changed to: {os.getcwd()}\n")
+        return getattr(module, app_name)
+    except Exception as e:
+        sys.stdout.write(f"\n{CYAN}[PYTHON]{RESET} ❌ Python {'Worker'if '--worker' in sys.argv else 'Standalone Server'} failed to dynamically load app target '{target_str}': {e}\n")
+        sys.stdout.flush()
+        os._exit(1)
+
+async def send_error_response(writer, 
+    status_code:int,
+    client_ip:str,
+    request_line:str,
+    server_version:str=VERSION, 
+    msg:str="",
+    ):
+    try:
+        status_phrase = HTTPStatus(status_code).phrase
+    except:
+        status_phrase = HTTPStatus(500).phrase
+        status_code = 500
+
+    if not msg:
+        msg = status_phrase
+
+    # 1. Craft the clean, professional monospace HTML layout
+    html_error_payload = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>{status_code} {status_phrase}</title>
+        <style>
+            body {{ font-family: 'monospace', sans-serif; margin: 3rem; background: #fafafa; color: #111; text-align: center; }}
+            .error-container {{ max-width: 600px; margin: 0 auto; background: white; padding: 2.5rem; border-radius: 6px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); border: 1px solid #eaeaea; }}
+            h1 {{ font-size: 1.8rem; color: #cc3333; margin-top: 0; padding-bottom: 0.5rem; border-bottom: 1px solid #eaeaea; }}
+            p {{ font-size: 1.1rem; color: #333; line-height: 1.6; }}
+            .details {{ font-size: 0.9rem; color: #666; background: #f5f5f5; padding: 0.8rem; border-radius: 4px; text-align: left; word-break: break-all; margin-top: 1.5rem; }}
+            .footer {{ margin-top: 2.5rem; border-top: 1px solid #eaeaea; padding-top: 0.8rem; font-size: 0.85rem; color: #666; text-align: center; }}
+        </style>
+    </head>
+    <body>
+        <div class="error-container">
+            <h1>{status_code} {status_phrase}</h1>
+            <p>{msg}</p>
+            <div class="details">
+                <b>Client IP:</b> {client_ip}<br>
+                <b>Request:</b> {request_line}<br>
+                <b>Server Timestamp:</b> {get_styled_date()}
+            </div>
+        </div>
+        <div class="footer">OxiServer/{server_version} (C++/Julia Powered ASGI Engine)</div>
+    </body>
+    </html>
+    """
+    
+    html_bytes = html_error_payload.encode('utf-8')
+    payload_length = len(html_bytes)
+
+    try:
+        #     # Emit strict HTTP/1.1 compliance packets
+        writer.write(f"HTTP/1.1 {status_code} {status_phrase}\r\n".encode())
+        writer.write("Content-Type: text/html; charset=utf-8\r\n".encode())
+        writer.write(f"Content-Length: {payload_length}\r\n".encode())
+        current_date = get_rfc_date()
+        writer.write(f"Date: {current_date}\r\n".encode('utf-8'))
+        writer.write(f"Server: OxiServer/{VERSION}\r\n".encode('utf-8'))
+
+        writer.write("Connection: close\r\n".encode())
+        writer.write("\r\n".encode()) # Mandatory delimiter boundary
+        await writer.drain()    
+        writer.write(html_bytes)
         await writer.drain()
         writer.close()
         await writer.wait_closed()
+        try:
+            method, path, protocol = request_line.split(' ') 
+            scope = {"method": method, "path": path, "protocol": protocol}
+            await log_access(scope, status_code, payload_length)
+        except Exception as exc:
+            excname = exc.__class__.__name__
+            await log_msg(f"Error {excname}: {exc}\nLogging with empty scope")
+            await log_access({}, status_code, payload_length)
+    except:
+        pass
+        # Fail silently if the socket pipe was dropped by the client browser
 
-######################################################################################
+async def get_response_headers(scope: dict, asgi_event: dict)-> list:
+    http_version = scope.get("http_version", "1.1")
+    evstatus = asgi_event.get("status")
+    evstatus = int(str(evstatus)) if str(evstatus).isdigit() else 404
+    status = HTTPStatus(evstatus)
+    status_line = f"HTTP/{http_version} {status.value} {status.phrase}\r\n"
 
-def fs_monitor():
-
-    parentdir = Path(__file__).parent
-
-    pyfiles = [open(str(entry), 'rb') for entry in parentdir.glob("*.py")]
-    hashes = [hashlib.sha1(fd.read()).hexdigest() for fd in pyfiles]
-    for fd in pyfiles:
-        fd.close()
-
-    while True:
-        time.sleep(1)
-        newpyfiles = [open(str(entry), 'rb') for entry in parentdir.glob("*.py")]
-        if len(newpyfiles) != len(pyfiles):
-            for fd in newpyfiles:
-                fd.close()
-            print(f"File count changed. Signaling server restart")
-            time.sleep(0.5)  # Optional debounce
-            os.execv(os.sys.executable, [os.sys.executable] + os.sys.argv)            # os.kill(os.getpid(), signal.SIGUSR1)
-            # os.kill(os.getpid(), signal.SIGUSR1)
-            # return
-        newhashes = [hashlib.sha1(fd.read()).hexdigest() for fd in newpyfiles]
-        for fd in newpyfiles:
-            fd.close()
-        if newhashes != hashes:
-            print(f"File hashes changed. Signaling server restart")
-            time.sleep(0.5)  # Optional debounce
-            os.execv(os.sys.executable, [os.sys.executable] + os.sys.argv)            # os.kill(os.getpid(), signal.SIGUSR1)
-            # os.kill(os.getpid(), signal.SIGUSR1)
-            # return
-
-######################################################################################
-
-async def run_dev_server(protocol: Callable = ProtocolFactory(), 
-                         host:str=oxi_host, port:int=oxi_port, 
-                         unix_socket:str=None) -> None:
+    headers = [to_bytes(status_line)]
     
-    subprocess.run("clear")
+    # Banderas para controlar duplicados o cabeceras conflictivas
+    has_content_length = False
+    has_connection = False
+    is_redirect_or_empty = evstatus in [204, 301, 302, 303, 307, 308]
 
-    with no_ctrlc_echo():
+    for header_line in asgi_event.get("headers", []):
+        if isinstance(header_line, (tuple, list)) and len(header_line) == 2:
+            key, value = header_line
+            key_lower = key.lower()
+            
+            # Si es una redirección, ignoramos cualquier Content-Length basura que mande la app
+            if key_lower == b"content-length":
+                has_content_length = True
+                if is_redirect_or_empty:
+                    value = b"0" # Forzamos a que sea cero
+            
+            if key_lower == b"connection":
+                has_connection = True
+                if is_redirect_or_empty:
+                    value = b"close" # Forzamos cierre inmediato
+
+            try:
+                full_header_line = key + b": " + value + b"\r\n"
+                headers.append(full_header_line)
+            except Exception as exc:
+                await log_msg(msg=f"Error while computing header line: {exc} - ({exc.__class__.__name__})")
+
+    # Si la app no especificó Content-Length en la redirección, lo agregamos nosotros
+    if not has_content_length and is_redirect_or_empty:
+        headers.append(b"content-length: 0\r\n")
+        
+    # Si no se especificó Connection, forzamos close para asegurar que curl libere el cursor
+    if not has_connection:
+        headers.append(b"connection: close\r\n")
+
+    # Corregimos el formato de fecha asegurando que el string de zona horaria no se mutile
+    # current_date = strftime("%a, %d %b %Y %H:%M:%S %z")
+    current_date = get_rfc_date()
+    headers.append(f"Date: {current_date}\r\n".encode('utf-8'))
+    headers.append(f"Server: OxiServer/{VERSION}\r\n".encode('utf-8'))
+    headers.append(b"\r\n")
+    return headers
+
+async def get_content_length(scope: dict)-> int:
+    for [key, value] in scope["headers"]:
+        if key == b"content-length":
+            val = to_bytes(value).decode('utf-8') if type(value) == bytes else value
+            return int(val)
+    return 0        
+
+async def get_scope_headers(request):
+    headers = [(k.lower().encode('latin-1'), v.encode('latin-1')) for k, v in request.get("headers", {}).items()]
+    dict_headers = dict(headers)
+    return headers, dict_headers
+
+async def get_scope(request:dict, reader:asyncio.StreamReader, writer:asyncio.StreamWriter, app=None):
+    global version
+    scope = {}
+
+    headers, dict_headers = await get_scope_headers(request)
+    scope["headers"] = headers
+    scope["_dict_headers"] = dict_headers # Internal use only
+    scope["_reader"] = reader # Internal use only
+    scope["_writer"] = writer # Internal use only
+    scope["_oxi_version"] = request.get("version", version) # Internal use only
+
+    remote_addr = writer.get_extra_info('peername')
+    if "X-Forwarded-For".lower().encode() in dict_headers:
+        remote_addr = (dict_headers["X-Forwarded-For".lower().encode()], remote_addr[1])
+    if "X-Real-IP".lower().encode() in dict_headers:
+        remote_addr = (dict_headers["X-Real-IP".lower().encode()], remote_addr[1])
+    remote_ip, remote_port = remote_addr[:2]
+    remote_port = int(remote_port) if remote_port else None
+    remote_host = ["Unknown host"]
+    client = (remote_addr[0], remote_port)
+
+    transport = writer.transport
+    sock = transport.get_extra_info('socket')
+
+    local_addr = writer.get_extra_info('sockname')
+    local_ip, local_port = local_addr[:2]
+    local_port = int(local_port) if local_port else None
+    server_name = f"OxiServer/{request.get('version', '0.0.1')}"
+
+
+    method = request.get("method", "GET")
+    path = request.get("path", "/")
+    protocol = request.get("protocol", "HTTP/1.1")
+    url = urlparse(path)
+    __, http_version = protocol.split("/")
+
+    oxi_version = request.get("version", version)
+    more_scope = {
+        "server_version": oxi_version,
+        "server_software": f"Oxi (Asynchronous Server - Julia powered) {'v ' +  oxi_version}",
+        "server_name": f"OxiServer/{oxi_version}",
+        "gateway_interface": "CGI/1.1",
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": http_version,
+        "method": method,
+        "scheme": url.scheme or "http",
+        "path": url.path,
+        "query_string": request.get("query_string", "").encode('latin-1'),
+        "x-real-ip": remote_ip,
+        "remote-host": remote_host[0],
+        "remote-port": str(remote_port) if remote_port else "null",
+        "server_ip": local_ip,
+        "local_port": str(local_port) if local_port else "null",
+        "server_port": str(local_port) if local_port else "80",
+        "client": client,
+        "protocol": protocol,
+        "_sock": sock,  # Internal use only
+        "extensions:": {
+            "type": "echo"
+        },
+        "request_body": request.get('body', b''),
+    }
+    scope.update(more_scope)
+
+    if (
+        method.upper() == "GET"
+        and b"Upgrade" in dict_headers.get(b"connection", b"")
+        and dict_headers.get(b"upgrade") == b"websocket"
+    ):
+        sec_websocket_protocol = dict_headers.get(b"sec-websocket-protocol", b"")
+        subprotocols = [proto.strip() for proto in sec_websocket_protocol.split(b",")]
+        scope.update({"type": "websocket", "subprotocols": subprotocols, "method": method, 
+        "scheme": "ws"})
+    else:
+        scope.update({"type": "http", "method": method})
+        if is_wsgi(app):
+            environ = {
+                "wsgi.version": (1, 0),
+                "wsgi.url_scheme": scope.get("scheme", "http"),
+                "wsgi.input": io.BytesIO(),
+                # "wsgi.errors": io.BytesIO(),
+                "wsgi.errors": sys.stderr,
+                "wsgi.multithread": True,
+                "wsgi.multiprocess": False,
+                "wsgi.run_once": False,
+                "GATEWAY_INTERFACE": "CGI/1.1",
+                "SERVER_SOFTWARE": scope.get("server_software"),
+                "REQUEST_METHOD": method.upper(),
+                "SCRIPT_NAME": os.path.split(path)[1],
+                "PATH_INFO": url.path,
+                "QUERY_STRING": to_bytes(scope["query_string"]).decode("ascii"),
+                # "QUERY_STRING": scope["query_string"],
+                "SERVER_PROTOCOL": f'HTTP/{scope["http_version"]}',
+                "SERVER_NAME": scope.get("server_name"),
+                "SERVER_PORT": scope.get("server_port"),
+                "REMOTE_ADDR": remote_ip,
+            }
+
+            for name, value in scope.get("headers", []):
+                name = to_bytes(name).decode("latin-1")
+                if name == "content-length":
+                    corrected_name = "CONTENT_LENGTH"
+                elif name == "content-type":
+                    corrected_name = "CONTENT_TYPE"
+                else:
+                    corrected_name = f'HTTP_{name.upper().replace("-", "_")}'
+                # HTTPbis say only ASCII chars are allowed in headers, but we latin1 just in case
+                value = to_bytes(value).decode("latin-1")
+                if corrected_name in environ:
+                    value = environ[corrected_name] + "," + value
+                environ[corrected_name] = value
+
+            scope['_wsgi_environ'] = environ # For internal use only
+
+    return scope
+
+async def wsgi2asgi(scope: dict, receive: Callable, send: Callable, wsgi_callable: Callable) -> Callable:
+    environ = scope.get("_wsgi_environ")
+    if not environ:
+        raise RuntimeError("WSGI environment is not set")
+    
+    if scope.get('method', 'GET').lower() not in ['get', 'head', 'options']:
+        msg = await receive()
+        body = msg.get('body', b'')
+        environ['wsgi.input'] = io.BytesIO(body)
+
+    status_str = "200 OK"
+    headers_list = []
+    # Usamos un bytearray común para acumular tanto lo que venga por el return iterable 
+    # como lo que se envíe usando la función write() heredada de start_response
+    body_buffer = bytearray()
+
+    # Invocable exigido por PEP 3333 que start_response debe retornar
+    def write_callback(data):
+        if not isinstance(data, bytes):
+            raise TypeError("WSGI write() argument must be a bytes object")
+        body_buffer.extend(data)
+
+    def start_response(status, headers, exc_info=None):
+        nonlocal status_str, headers_list
+        if exc_info and headers_list:
+            # Si ya se enviaron o procesaron cabeceras y hay un error, 
+            # el estándar exige relanzar la excepción si la app lo pide
+            raise exc_info[1].with_traceback(exc_info[2])
+            
+        status_str = status
+        headers_list = [(k.lower().encode('latin-1'), v.encode('latin-1')) for k, v in headers]
+        
+        # CUMPLIMIENTO PEP 3333: Retornamos el invocable de escritura síncrona
+        return write_callback
+
+    async def asgi_wrapper(scope: dict = scope, receive: Callable = receive, send: Callable = send):
+        nonlocal status_str, headers_list, body_buffer
+        
+        # Ejecutamos la app de forma segura en el pool de hilos
+        result = None
+        if inspect.iscoroutinefunction(wsgi_callable):
+            result = await wsgi_callable(environ, start_response)
+        else:
+            task = asyncio.create_task(asyncio.to_thread(wsgi_callable, environ, start_response))
+            result = await task
+        
+        # 1. Consumimos el iterable retornado por la app (ej: Flask)
+        if result is not None:
+            lresult = []
+            for chunk in result:
+                if chunk:
+                    lresult.append(chunk)
+            # Combinamos los datos del iterable con lo que se haya acumulado en write_callback
+            body_buffer.extend(b''.join(lresult))
+
+        try:
+            status_code = int(status_str.split(" ")[0])
+        except Exception:
+            status_code = 500
+
+        # --- VALIDACIÓN Y PARCHE DE CABECERAS HTTP ---
+        has_content_length = any(k == b'content-length' for k, _ in headers_list)
+        has_connection = any(k == b'connection' for k, _ in headers_list)
+
+        # Calculamos la longitud final real sumando ambos flujos de datos
+        if not has_content_length:
+            headers_list.append((b'content-length', str(len(body_buffer)).encode('ascii')))
+
+        if not has_connection:
+            headers_list.append((b'connection', b'close'))
+        else:
+            headers_list = [(k, b'close' if k == b'connection' else v) for k, v in headers_list]
+
+        # 2. Despachamos los eventos de forma asíncrona y segura (Thread-safe)
+        await send({
+            "type": "http.response.start",
+            "status": status_code,
+            "headers": headers_list
+        })
+
+        await send({
+            "type": "http.response.body",
+            "body": bytes(body_buffer),
+            "more_body": False
+        })
+
+        close_method = getattr(result, "close", None)
+        if close_method is not None and callable(close_method):
+            close_method()
+
+       # LLAMADA AL LOG COMPATIBLE CON NGINX
+        await log_access(scope, status_code, len(body_buffer))
+
+    return asgi_wrapper
+
+async def http_handler(scope, reader: asyncio.StreamReader, writer, app):
+    response_headers = []
+    headers_sent = False
+    
+    # Usamos un diccionario de contexto atómico. 
+    # Python pasa los diccionarios por referencia, garantizando que cualquier 
+    # cambio dentro de send() sea visible instantáneamente en el bloque except.
+    tx_state = {
+        "status_code": 200,
+        "bytes_sent": 0,
+        "logged": False
+    }
+
+    async def receive()-> dict:
+        if not scope:
+            return {}
+
+        if len(scope.get('request_body', b'')):
+            body = base64.b64decode(scope.get('request_body'))
+            # print(f"Body preloaded of length '{len(body)}'")
+            return {
+                "type": "http.request",
+                "body": to_bytes(body),
+                "length": len(body),
+                "more_body": False,
+            }
+
+        content_length = await get_content_length(scope)
+        body = b''
+        if scope.get('method', 'GET').lower() in ['post', 'put', 'patch']:
+            retries = 0
+            max_retries = 5
+            while True:
+                try:
+                    morebody = await asyncio.wait_for(reader.read(1024), timeout=1)
+                    body += morebody
+                    await asyncio.sleep(0)
+                    if len(body) >= content_length or len(morebody) == 0:
+                        break
+                except asyncio.TimeoutError:
+                    await asyncio.sleep(0)
+                    await reader.read(0)
+                    await asyncio.sleep(0.01)
+                    retries += 1
+                    msg = f"{' ' * 15} - - [{get_styled_date()}] Timed out waiting for request body. Retry {retries}"
+                    await log_msg(msg)
+                    if retries >= max_retries:
+                        await send_error_response(writer, 500, scope.get('client', ['localhost', 0])[0],
+                                                         f"HTTP/1.1 {scope.get('method', 'get').upper()} {scope.get('path', '/')}",
+                                                        scope.get('oxi_version', '0.0.1'),msg=msg)
+                        break
+
+        scope["request_body"] = body
+        return {
+            "type": "http.request",
+            "body": body,
+            "length": len(body),
+            "more_body": False,
+        }
+
+    async def send(event: dict)-> None:
+        nonlocal response_headers, headers_sent
+        if not scope or scope == {}:
+            return
+            
+        if event["type"] == "http.response.start":
+            if headers_sent:
+                return
+            # Registramos el código numérico real en el diccionario de referencia de forma inmediata
+            tx_state["status_code"] = int(event.get("status", 200))
+            response_headers = await get_response_headers(scope, event)            
+            
+            # Intentamos enviar cabeceras rápido
+            try:
+                writer.writelines(response_headers)
+                await writer.drain()
+                response_headers = []
+                headers_sent = True
+            except ConnectionResetError:
+                writer.close()
+                return
+            except BrokenPipeError:
+                writer.close()
+                return
+            except Exception as exc:
+                writer.close()
+                await log_msg(f"Exception during sending response headers: {exc} - ({exc.__class__.__name__})")
+            return
+            
+        elif event["type"] == "http.response.body":
+            if not headers_sent and len(response_headers) != 0:
+                try:
+                    writer.writelines(response_headers)
+                    await writer.drain()
+                    response_headers = []
+                    headers_sent = True
+                except ConnectionResetError:
+                    writer.close()
+                    return
+                except BrokenPipeError:
+                    writer.close()
+                    return
+                except Exception as exc:
+                    writer.close()
+                    await log_msg(f"Exception during sending response headers: {exc} - ({exc.__class__.__name__})")
+                    return
+        else:
+            await log_msg(f"Unknown event type: '{event['type']}'")
+            return
+        
+        body = event.get("body", b"")
+        if body:
+            tx_state["bytes_sent"] += len(body)
+            try:
+                writer.write(body) 
+            except ConnectionResetError:
+                try:
+                    writer.close()
+                except:
+                    pass
+                if not is_wsgi(app) and not tx_state["logged"]:
+                    await log_access(scope, tx_state["status_code"], tx_state["bytes_sent"])
+                    tx_state["logged"] = True
+                return
+            except BrokenPipeError:
+                try:
+                    writer.close()
+                except:
+                    pass
+                if not is_wsgi(app) and not tx_state["logged"]:
+                    await log_access(scope, tx_state["status_code"], tx_state["bytes_sent"])
+                    tx_state["logged"] = True
+                return
+            except Exception as exc:
+                try:
+                    writer.close()
+                except:
+                    pass
+                # Si el socket se rompe aquí, registramos el log con los datos reales guardados
+                # await log_msg(f"Exception occurred while sending body chunk: {exc} - ({exc.__class__.__name__})")
+                if not is_wsgi(app) and not tx_state["logged"]:
+                    await log_access(scope, tx_state["status_code"], tx_state["bytes_sent"])
+                    tx_state["logged"] = True
+                raise 
+
+        if event.get("more_body", False) is False:
+            try:
+                if not headers_sent and len(response_headers) != 0:
+                    writer.writelines(response_headers)
+                    await writer.drain()
+                    headers_sent = True
+                
+                await writer.drain()
+                
+                # Emitimos el log en el flujo feliz antes de cerrar
+                if not is_wsgi(app) and not tx_state["logged"]:
+                    try:
+                        await log_access(scope, tx_state["status_code"], tx_state["bytes_sent"])
+                    except:
+                        pass
+                    tx_state["logged"] = True
+                
+                writer.close()
+                await writer.wait_closed()
+            except ConnectionResetError:
+                writer.close()
+                return
+            except BrokenPipeError:
+                writer.close()
+                return
+            except Exception as exc:
+                writer.close()
+                await log_msg(f"Exception '{exc.__class__.__name__}' occurred in file {__file__} at line {'inspect.currentframe().f_lineno'} while sending final body chunk: {exc}")
+                if not is_wsgi(app) and not tx_state["logged"]:
+                    await log_access(scope, tx_state["status_code"], tx_state["bytes_sent"])
+                    tx_state["logged"] = True
+    try:
+        if is_wsgi(app):
+            wapp = await wsgi2asgi(scope, receive, send, app)
+            await wapp(scope, receive, send)
+        else:
+            await app(scope, receive, send)
+    except ConnectionResetError:
+        writer.close()
+        return
+    except BrokenPipeError:
+        writer.close()
+        return
+    except Exception as exc:
+        writer.close()
+        await log_msg(f"Exception occurred in file {__file__}, line No {'inspect.currentframe().f_lineno'} while awaiting app: {exc} - ({exc.__class__.__name__})")
+        # Si el flujo se cae debido a que el cliente cerró el socket en plena ráfaga, 
+        # el diccionario tx_state tendrá el código real mutado por send() de forma garantizada.
+        # if not is_wsgi(app) and not tx_state["logged"]:
+        if not tx_state["logged"]:
+            await log_access(scope, tx_state["status_code"], tx_state["bytes_sent"])
+            tx_state["logged"] = True
+        
+        # Solo imprimimos un error 500 real si no fue un descarte de tubería del socket
+        exc_str = str(exc).lower()
+        if "connection" not in exc_str and "pipe" not in exc_str:
+            try:
+                await send_error_response(writer, 500, scope.get("client", ["localhost", 0])[0],
+                    f'{scope.get("method", "GET?")} {scope.get("path", "/?")}',
+                    # server_version=scope.get("_oxi_version", "0.0.1"),
+                    server_version=VERSION,
+                    msg=f"{exc} - ({exc.__class__.__name__})")
+            except Exception:
+                pass
+
+async def websocket_handler(scope, reader, writer, app):
+    def make_upgrade_response():
+        guid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+        dict_headers = dict(scope["headers"])
+        # Buscamos la cabecera 'Sec-WebSocket-Key' ignorando mayúsculas/minúsculas
+        key = ""
+        for k, v in dict_headers.items():
+            if to_bytes(k).lower() == b"sec-websocket-key":
+                key = to_bytes(v).decode().strip()
+                break
+                
+        if not key:
+            raise KeyError("Sec-WebSocket-Key header is missing from handshake request")
+        key_hash = hashlib.sha1(f"{key}{guid}".encode())
+        accept = base64.b64encode(key_hash.digest())
+
+        # Complete HTTP handshake and upgrade to websocket connection
+        headers = [
+            b"HTTP/1.1 101 Switching Protocols\r\n",
+            b"Upgrade: websocket\r\n",
+            b"Connection: Upgrade\r\n",
+            b"Sec-WebSocket-Accept: " + accept + b"\r\n",
+            b"\r\n",
+        ]
+
+        return headers
+
+    async def read_websocket_frame():
+        masking_key = []
+
+        # Read frame header
+        try:
+            header = await reader.read(2)
+            if len(header) < 2:
+                raise ConnectionResetError("Client disconnected mid-frame")    
+        except Exception as exc:
+            await log_msg(f"Exception occurred while trying to read frame: {repr(exc)}")
+            raise
+
+        unpacked = struct.unpack("<BB", header)
+        fin = (unpacked[0] & (1 << 7)) > 0
+        opcode = unpacked[0] & 0x0F
+        mask = (unpacked[1] & (1 << 7)) > 0
+        payload_len = unpacked[1] & 0x7F
+
+        if payload_len == 126:
+            l = await reader.read(2)
+            u = struct.unpack("<H", l)
+            payload_len = u[0]
+        elif payload_len == 127:
+            l = await reader.read(8)
+            if len(header) < 8:
+                raise ConnectionResetError("Client disconnected mid-frame")    
+            u = struct.unpack("<Q", l)
+            payload_len = u[0]
+
+        if mask:
+            masking_key = await reader.read(4)
+
+        # 🚀 ENFORCE PAYLOAD LIMIT BEFORE READING
+        if payload_len > MAX_WS_PAYLOAD:
+            # Per RFC 6455, close code 1009 = "Message Too Big"
+            raise ConnectionError(f"WebSocket frame too large: {payload_len} bytes")
+
+        payload = await reader.read(payload_len)
+
+        if mask:
+            payload = bytes(payload[i] ^ masking_key[i % 4] for i in range(len(payload)))
+
+        return fin, opcode, payload
+
+    def make_frame(opcode, payload=b''):
+        frame = bytearray()
+        frame.append(0x80 | opcode)  # FIN bit set and the opcode for ping (0x9)
+
+        length = len(payload)
+        if length < 126:
+            frame.append(length)
+        elif length < (1 << 16):
+            frame.append(126)
+            frame.extend(length.to_bytes(2, byteorder='big'))
+        else:
+            frame.append(127)
+            frame.extend(length.to_bytes(8, byteorder='big'))
+
+        frame.extend(payload)
+        return frame
+
+    def make_websocket_frame(event: dict):
+        payload = b""
+        opcode = -1
+
+        if event.get("text") is not None:
+            payload = event.get("text", "").encode()
+            opcode = 1
+            # frame.extend(bytes([(1 << 7) | 1]))  # FIN=1 + opcode=1
+        elif event.get("bytes") is not None:
+            payload = event.get("bytes", b"")
+            opcode = 2
+            if event.get("type") == "websocket.ping":
+                payload = payload[:125]
+                opcode = 9
+            if event.get("type") == "websocket.pong":
+                payload = payload[:125]
+                opcode = 10
+
+        return make_frame(opcode, payload)
+    
+    connect_sent = False
+
+    async def receive():
+        nonlocal connect_sent
+
+        event = {}
+
+        if not connect_sent:
+            connect_sent = True
+            return {"type": "websocket.connect"}
+
+        fin, opcode, payload = await read_websocket_frame()
+
+        if opcode == 1:
+            event = {"type": "websocket.receive", "text": to_bytes(payload).decode()}
+        elif opcode == 2:
+            event = {"type": "websocket.receive", "bytes": to_bytes(payload)}
+        elif opcode == 8:
+            close_code = 1005  # Default
+            if len(payload):
+                u = struct.unpack(">H", payload)
+                close_code = u[0]
+            return {"type": "websocket.disconnect", "code": close_code}
+        elif opcode == 9:
+            event = {"type": "websocket.ping", "bytes": payload}
+#                await log_msg("\nPING frame received.")
+#                await log_msg(f"fin: {fin} - opcode: {opcode} - payload: {payload}")
+        elif opcode == 10:
+            event = {"type": "websocket.pong", "bytes": payload}
+#                await log_msg("\nPONG frame received.")
+#                await log_msg(f"fin: {fin} - opcode: {opcode} - payload: {payload}")
+        else:
+            raise Exception(f"Opcode not implemented: {opcode}")
+
+        if not fin:
+            raise Exception("Fragmented frames not supported")
+
+        return event
+
+    async def send(event):
+        ev_type = event.get("type", "")
+        if ev_type == "websocket.accept":
+            # App's is requesting to accept the connection request
+            response = make_upgrade_response()
+            try:
+                writer.writelines(response)
+                await writer.drain()
+            except Exception as exc:
+                await log_msg(f"Exception occurred in send websocket coroutine accepting connection: {exc} - ({exc.__class__.__name__})")
+                raise
+        elif ev_type == "websocket.ping" or ev_type == "websocket.pong" or ev_type == "websocket.send":
+            # App's sending data
+            frame = make_websocket_frame(event)
+            try:
+                writer.write(frame)
+                await writer.drain()
+            except Exception as exc:
+                await log_msg(f"Exception occurred in send websocket coroutine while sending frame: {exc} - ({exc.__class__.__name__})")
+                raise
+        elif ev_type == "websocket.close":
+            # App's requesting to close the connection
+            code = event.get("code", 1000)
+            try:
+                writer.write(bytes([1 << 7 | 8]))  # opcode 8
+                writer.write(bytes([2]) + code.to_bytes(2, "big"))
+                await writer.drain()
+                writer.close()
+                await writer.wait_closed()
+            except Exception as exc:
+                await log_msg(f"Exception occurred in send websocket coroutine while closing connection: {exc} - ({exc.__class__.__name__})")
+                raise
+
+    # Invoke the app!
+    try:
+        await app(scope, receive, send)
+    except ConnectionError as exc:
+        # A protocol-level error in the frame (bad length, malformed bytes, etc.)
+        # Send a proper WebSocket close frame to the client, then stop.
+        await log_msg(f"[WebSocket] Protocol error: {exc}")
+        try:
+            # 1009 = Message Too Big, 1002 = Protocol Error
+            code = 1009 if "too large" in str(exc).lower() else 1002
+            writer.write(bytes([0x88, 2]) + code.to_bytes(2, "big"))
+            await writer.drain()
+        except Exception:
+            pass
+        finally:
+            writer.close()
+            try:
+                await writer.wait_closed()
+            except Exception:
+                pass
+    except Exception as exc:
+        etype, _, tb = sys.exc_info()
+        await log_msg(f"Exception '{etype}' occurred in websocket handler: {exc}")
+        writer.close()
+        try:
+            await writer.wait_closed()
+        except Exception:
+            pass
+    
+async def process_message(client_sock, request, python_app, reader=None, writer=None):
+    scope = {}
+    try:
+        # If reader/writer aren't provided (Slave Mode), we initialize them from the adopted socket.
+        # If they are provided (Standalone Mode), we reuse the native server transports directly.
+        if reader is None or writer is None:
+            reader, writer = await asyncio.open_connection(sock=client_sock)
+            
+        scope = await get_scope(request, reader, writer, python_app)
+        
+        if scope.get("type") == 'http':
+            await http_handler(scope, reader, writer, python_app)
+        elif scope.get("type") == 'websocket':
+            await websocket_handler(scope, reader, writer, python_app)
+        else:
+            await send_error_response(writer, 400, 
+                                      scope.get("client", ["localhost", 0]), 
+                                      f'{scope.get("method", "GET?")} {scope.get("path", "/?")}',
+                                    #   server_version=scope.get("_oxi_version", "0.0.1"),
+                                      server_version=VERSION,
+                                      msg=f"Message type \'{scope.get('type')}\' not supported.")
+    except Exception as exc:
+        exc_str = str(exc).lower()
+        if "connection" not in exc_str and "pipe" not in exc_str:
+            await log_msg(f"ERROR inside process_message cluster: {exc} - ({exc.__class__.__name__})")
+            try:
+                await send_error_response(writer, 500, 
+                                            scope.get("client", ["localhost", 0]), 
+                                            f'{scope.get("method", "GET?")} {scope.get("path", "/?")}',
+                                            server_version=VERSION,
+                                            msg=f"ERROR:\n{exc} - ({exc.__class__.__name__})")
+            except Exception:
+                pass
+
+def julia_bridge_parse_request(socket_fd: int) -> str:
+    """
+    Permite a Julia delegar el parseo inicial de HTTP a Python pasándole el FD del socket.
+    Devuelve un string JSON con el request formateado.
+    """
+    # Reconstruimos temporalmente el socket en Python para leer las cabeceras
+    sock = socket.fromfd(socket_fd, socket.AF_INET, socket.SOCK_STREAM)
+    # Creamos un archivo de lectura de buffers de texto ordinario
+    sock_file = sock.makefile('rb')
+    
+    try:
+        request_dict = parse_http_stream(lambda: sock_file.readline())
+        return json.dumps(request_dict) if request_dict else "null"
+    finally:
+        # Desacoplamos el archivo sin cerrar el socket físico real
+        sock_file.close()
+        sock.detach()
+
+async def run_lifespan(app, loop):
+    global _lifespan_ready
+    receive_queue = asyncio.Queue()
+    shutdown_event = asyncio.Event()
+    startup_complete_event = asyncio.Event()
+    startup_error = None
+    task_done = False  # 🚀 Track if the app returned
+
+    # 🚀 WSGI apps don't support lifespan. Skip the protocol.
+    if is_wsgi(app):
+        print(f"\n\033[33m[Lifespan]\033[0m WSGI app detected. Skipping ASGI Lifespan protocol.")
+        _lifespan_ready = True
+        # Return a dummy task and queues so C++ shutdown logic doesn't crash
+        shutdown_event.set()
+        dummy_task = asyncio.create_task(asyncio.sleep(0)) 
+        return receive_queue, shutdown_event, dummy_task
+
+    async def receive():
+        return await receive_queue.get()
+
+    async def send(message):
+        nonlocal startup_error, task_done
+        if message['type'] == 'lifespan.startup.complete':
+            startup_complete_event.set()
+        elif message['type'] == 'lifespan.startup.failed':
+            startup_error = message.get('message', 'Unknown error')
+            startup_complete_event.set()
+        elif message['type'] == 'lifespan.shutdown.complete':
+            shutdown_event.set()
+        elif message['type'] == 'lifespan.shutdown.failed':
+            shutdown_event.set()
+        elif message['type'] == 'lifespan.shutdown':
+            task_done = True
+
+    scope = {
+        "type": "lifespan",
+        "asgi": {"version": "3.0", "spec_version": "2.0"},
+        "state": {"server": f"OxiServer/{VERSION}"}
+    }
+
+    async def app_wrapper():
+        nonlocal task_done
+        try:
+            await app(scope, receive, send)
+        except Exception as e:
+            print(f"\n\033[33m[Lifespan]\033[0m App does not support lifespan: {e}")
+        finally:
+            task_done = True # 🚀 App finished (either via exception or return)
+
+    app_task = asyncio.create_task(app_wrapper())
+
+    await receive_queue.put({"type": "lifespan.startup"})
+
+    startup_wait_task = asyncio.create_task(startup_complete_event.wait())
+
+    # 🚀 Wait for startup to complete OR the app to return
+    done, pending = await asyncio.wait(
+        [startup_wait_task, app_task],
+        return_when=asyncio.FIRST_COMPLETED
+    )
+
+    if startup_error is not None:
+        app_task.cancel()
+        raise LifespanStartupError(startup_error)
+    
+    if not startup_complete_event.is_set():
+        # The app returned before sending startup.complete
+        print(f"{CYAN}[Python Worker]{RESET} App returned without lifespan handshake. Skipping protocol.")
+        startup_wait_task.cancel()
+        _lifespan_ready = True
+        shutdown_event.set() 
+        dummy_task = asyncio.create_task(asyncio.sleep(0)) 
+        return receive_queue, shutdown_event, dummy_task
+
+    print(f"{CYAN}[Python Worker]{RESET} Lifespan startup complete.")
+    _lifespan_ready = True
+    return receive_queue, shutdown_event, app_task
+
+def run_standalone_server(host: str, port: int, python_app, loop: asyncio.AbstractEventLoop):
+
+    # =====================================================================
+    # 🟢 MODE 1: STANDALONE 
+    # =====================================================================
+    async def standalone_client_callback(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+        client_sock = writer.get_extra_info('socket')
+        if client_sock is None:
+            writer.close()
+            return
+
+        request_data = None
+        try:    
+            request_data = await parse_standalone_request(reader)
+        except KeyboardInterrupt:
+            return
+        if request_data:
+            loop.create_task(process_message(client_sock, request_data, python_app, reader, writer))
+        else:
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except Exception:
+                pass
+
+    async def start_standalone_server():
+        if uvloop_available:
+            print(f"{CYAN}[Python Worker]{RESET} Asyncio using Uvloop.")
+        else:
+            print(f"{CYAN}[Python Worker]{RESET} Uvloop not available.")
+        print(f"{CYAN}[Python Worker]{RESET} Starting Lifespan protocol...")
+
+        
+        try:
+            l_receive_q, l_shutdown_event, l_task = await run_lifespan(python_app, loop)
+        except LifespanStartupError as e:
+            print(f"\n\033[31m[Server]\033[0m Aborting startup: {e}")
+            return
+
+        server = await asyncio.start_server(standalone_client_callback, host, port, reuse_address=True, reuse_port=True)
+        sys.stdout.write(f"\nPYTHON: 🚀 Oxi-Standalone ASGI/WSGI Server active at http://{host}:{port} (PID: {os.getpid()})\n")
+        sys.stdout.flush()
+        
+        # 🚀 Create an event to signal shutdown gracefully
         stop_event = asyncio.Event()
-        loop = asyncio.get_running_loop()
 
-        def _signal_handler():
-            print("\nSignal received. Shutting down...")
+        def signal_handler():
+            print(f"\nPYTHON: 🚀 Oxi-Standalone Server leaving the stage... (PID: {os.getpid()}).")
             stop_event.set()
 
-    
-        loop.add_signal_handler(signal.SIGINT, _signal_handler)
-        loop.add_signal_handler(signal.SIGTERM, _signal_handler)
-        
-        server = None
-        if unix_socket:
-            if os.path.exists(unix_socket):
-                os.remove(unix_socket)
-            server = await asyncio.start_unix_server(protocol, path=unix_socket, loop=loop)
-        else:
-            server = await asyncio.start_server(protocol, host, port, reuse_address=True, reuse_port=True)
-
-        server_task = asyncio.create_task(server.serve_forever())
-
-        if unix_socket:
-            print(f"\n Oxi Server running at {unix_socket}\n")
-        else:
-            print(f"\n Oxi Server running at {host}:{port}\n")
-
-        # Wait for shutdown signal
-        await stop_event.wait()
-        print("Stopping Oxi server...")
-
-        # Cleanup
-        server.close()
-        await server.wait_closed()
-        server_task.cancel()
+        # Register the signal handlers for the event loop
+        loop.add_signal_handler(signal.SIGINT, signal_handler)
+        loop.add_signal_handler(signal.SIGTERM, signal_handler)
 
         try:
-            await server_task
+            # Serve until the stop_event is set
+            async with server:
+                await stop_event.wait()
         except asyncio.CancelledError:
             pass
+        finally:
+            # 🚀 The shutdown logic runs INSIDE the coroutine, BEFORE the loop closes
+            print(f"\n{CYAN}[Python Worker]{RESET} Sending lifespan.shutdown...")
+            try:
+                await l_receive_q.put({"type": "lifespan.shutdown"})
+                await asyncio.wait_for(l_shutdown_event.wait(), timeout=5.0)
+                await l_task
+                print(f"{CYAN}[Python Worker]{RESET} Lifespan shutdown complete.")
+            except asyncio.TimeoutError:
+                print(f"{CYAN}[Python Worker]{RESET} App did not respond to lifetime shutdown in time. Forcing exit.")
+                os._exit(1)
+            except Exception as e:
+                print(f"{CYAN}[Python Worker]{RESET} Lifespan shutdown error: {e}")
+                os._exit(1)
 
-        print("Oxi Server shut down cleanly.")
+    try:
+        loop.run_until_complete(start_standalone_server())
+    except KeyboardInterrupt:
+        # Fallback in case the signal handler didn't catch it
+        sys.stdout.write(f"\nPYTHON: 🚀 Oxi-Standalone Server leaving the stage... (PID: {os.getpid()}).\n")
+        sys.stdout.flush()
+    finally:
+        loop.close()
 
-async def runner(port: int = oxi_port, host: str = oxi_host) -> None:
-    # protocol = ProtocolFactory()
-    # protocol.allow_dirlisting = False
-    # await run_dev_server(protocol, host=oxi_host, port=oxi_port)
-    await run_dev_server(host=host, port=port) # Uses ProtocolFactory() by default
+def run_worker_server(python_app, loop: asyncio.AbstractEventLoop):
+        # =====================================================================
+        # 🟡 MODO 2: ESCLAVO (Tándem Híbrido coordinado por Julia)
+        # =====================================================================
+        UNIX_SOCKET_PATH = "/tmp/julia_python.sock"
+        if os.path.exists(UNIX_SOCKET_PATH):
+            os.remove(UNIX_SOCKET_PATH)
+            
+        server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        server.bind(UNIX_SOCKET_PATH)
+        server.listen(128)
+        server.setblocking(False)
+        
+        async def read_and_dispatch(julia_conn):
+            chsize = 8192 * 4
+            try:
+                ancsize = socket.CMSG_SPACE(struct.calcsize("i"))
+                json_bytes, ancdata, flags, addr = julia_conn.recvmsg(chsize, ancsize)
+                
+                # --- CIRCUITO TOLERANTE A FRAGMENTACIÓN UNIX ---
+                # Si llegaron los descriptores pero el JSON se retrasó en el bus local,
+                # cedemos un micro-tick al loop y re-intentamos leer el remanente
+                retry = 0
+                while not json_bytes and retry < 3:
+                    retry += 1
+                    await asyncio.sleep(0.005)
+                    json_bytes, _, _, _ = julia_conn.recvmsg(chsize)
+
+                while True:
+                    await asyncio.sleep(0.005)
+                    more_bytes , _, _, _ = julia_conn.recvmsg(chsize)
+                    if more_bytes:
+                        json_bytes += more_bytes
+                    else:
+                        break
+
+                julia_conn.close()
+
+                if not json_bytes:
+                    return # Si tras los reintentos está vacío, salimos de forma segura
+                    
+                request_data = json.loads(to_bytes(json_bytes).decode('utf-8'))
+                client_sock = ancillary2sock(ancdata)
+                
+                if client_sock is not None:
+                    loop.create_task(process_message(client_sock, request_data, python_app))
+                else:
+                    sys.stdout.write("\nPYTHON: ⚠️ Warning: Socket descriptor empty from Julia.\n")
+                    sys.stdout.flush()
+            except Exception as e:
+                sys.stdout.write(f"\nPYTHON: ❌ Error in connection dispatch pipeline: {e}\n")
+                sys.stdout.flush()
+            finally:
+                try: 
+                    julia_conn.close() 
+                except Exception: 
+                    pass
+
+        def handle_julia_connection():
+            try:
+                julia_conn, _ = server.accept()
+                julia_conn.setblocking(True)
+            except BlockingIOError:
+                return
+            except Exception as e:
+                sys.stdout.write(f"\nPYTHON: ❌ Error accepting Julia connection: {e}\n")
+                sys.stdout.flush()
+                return
+            loop.create_task(read_and_dispatch(julia_conn))
+
+        loop.add_reader(server.fileno(), handle_julia_connection)
+        
+        sys.stdout.write(f"\nPYTHON: 🚀 Oxi Worker fully operational in single asynchronous thread (PID: {os.getpid()}).\n")
+        sys.stdout.flush()
+
+        try:
+            loop.run_forever()
+        except KeyboardInterrupt:
+            sys.stdout.write(f"\nPYTHON: 🚀 Oxi Worker leaving the stage... (PID: {os.getpid()}).\n")
+            sys.stdout.flush()
+        finally:
+            loop.close()
+
+def run(app, host:str="0.0.0.0", port:int=8086):
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        run_standalone_server(host, port, app, loop) 
+    except KeyboardInterrupt:
+        sys.stdout.write(f"\nPYTHON: 🚀 Oxi-Standalone Server leaving the stage... (PID: {os.getpid()}).\n")
+        sys.stdout.flush()
+    finally:
+        loop.close()
+
+def embedded_send_html_error(socket_fd: int, status_code: int, msg: str, path: str, client_ip: str, method: str):
+    """
+    C++ Direct Error Entrypoint.
+    Receives the true client IP tracked by C++ to avoid proxy masking.
+    """
+    global _embedded_global_loop
+    if _embedded_global_loop is None:
+        return
+
+    client_sock = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM, fileno=socket_fd)
+    client_sock.setblocking(False)
+
+    async def async_error_worker():
+        try:
+            reader, writer = await asyncio.open_connection(sock=client_sock)
+            # request_line = f"GET {path} HTTP/1.1"
+            request_line = f"{method} {path} HTTP/1.1"
+            
+            # 🚀 USAMOS LA IP PROVISTA POR C++ DIRECTAMENTE
+            await send_error_response(writer, status_code, client_ip, request_line, VERSION, msg=msg)
+        except Exception as e:
+            sys.stdout.write(f"\nPYTHON ERROR WORKER ❌ Error rendering HTML response: {e}\n")
+            sys.stdout.flush()
+        finally:
+            try:
+                client_sock.close()
+                # os.close(socket_fd)
+            except OSError:
+                pass
+
+    asyncio.run_coroutine_threadsafe(async_error_worker(), _embedded_global_loop)
+
+def embedded_send_directory_listing(socket_fd: int, path: str, client_ip: str):
+    """
+    C++ Direct Directory Listing Entrypoint.
+    Bypasses the full ASGI pipeline to immediately render a clean Nginx-style
+    directory index using the existing logic in static.py.
+    """
+    global _embedded_global_loop
+    if _embedded_global_loop is None:
+        return
+
+    # Importación tardía para evitar acoplamientos circulares
+    import static 
+
+    client_sock = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM, fileno=socket_fd)
+    client_sock.setblocking(False)
+
+    async def async_dir_worker():
+        tx_state = {
+        "status_code": 200,
+        "bytes_sent": 0,
+        "logged": False
+        }
+
+
+        try:
+            reader, writer = await asyncio.open_connection(sock=client_sock)
+            
+            # Reconstruimos un scope ASGI mínimo y compatible exigido por static.handle_send_dir
+            scope = {
+                "type": "http",
+                "path": path,
+                "method": "GET",
+                "client": [client_ip.encode('latin-1'), 0],
+                "protocol": "HTTP/1.1"
+            }
+
+            # Creamos un emulador simplificado del canal 'send' ASGI usando directamente el writer
+            async def mock_send(event: dict):
+                if event["type"] == "http.response.start":
+                    tx_state["status_code"] = int(event.get("status", 200))
+                    status_line = f"HTTP/1.1 {event['status']} OK\r\n"
+                    writer.write(status_line.encode())
+                    for k, v in event.get("headers", []):
+                        writer.write(k + b": " + v + b"\r\n")
+                    writer.write(b"\r\n")
+                    await writer.drain()
+                elif event["type"] == "http.response.body":
+                    body = event.get("body", b"")
+                    if body:
+                        tx_state["bytes_sent"] += len(body)
+                        writer.write(body)
+                    if not event.get("more_body", False):
+                        await writer.drain()
+                        writer.close()
+                        await writer.wait_closed()
+                        if not tx_state["logged"]:
+                            await log_access(scope, tx_state["status_code"], tx_state["bytes_sent"])
+                            tx_state["logged"] = True
+
+
+            # Delegamos la renderización visual completa al motor existente de la suite
+            await static.handle_send_dir(scope, mock_send)
+            
+        except Exception as e:
+            sys.stdout.write(f"\nPYTHON DIR WORKER ❌ Error rendering directory index: {e}\n")
+            sys.stdout.flush()
+        finally:
+            try:
+                client_sock.close()
+                # os.close(socket_fd)
+            except OSError:
+                pass
+
+    # Agendamos de forma segura en la hebra del loop permanente
+    asyncio.run_coroutine_threadsafe(async_dir_worker(), _embedded_global_loop)
+
+def embedded_run_cgi(socket_fd: int, method: str, path: str, query_string: str, protocol: str, client_ip: str, raw_headers_json: str, body_bytes: bytes):
+    """
+    C++ Direct CGI Execution Entrypoint.
+    Bypasses string tokenization by accepting a native PyDict object directly from C++.
+    """
+    global _embedded_global_loop
+    if _embedded_global_loop is None:
+        return
+
+    import static
+    import json # Requerido
+
+    client_sock = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM, fileno=socket_fd)
+    client_sock.setblocking(False)
+
+    async def async_cgi_worker():
+        try:
+            reader, writer = await asyncio.open_connection(sock=client_sock)
+            
+            # 🚀 RESTAURADO: Des-serializar la cadena JSON perfecta generada por C++
+            headers_dict = json.loads(raw_headers_json)
+            headers_list = [(k.encode('latin-1'), v.encode('latin-1')) for k, v in headers_dict.items()]
+            
+            # Creamos un scope CGI/1.1 compatible con la especificación de tu handle_cgi
+            scope = {
+                "type": "http",
+                "http_version": protocol.split("/")[-1] if "/" in protocol else "1.1",
+                "protocol": protocol,
+                "method": method.upper(),
+                "path": path,
+                "query_string": query_string.encode('latin-1'),
+                "headers": headers_list,
+                "server_name": "OxiServer/C++ Hybrid Core",
+                "local_port": str(client_sock.getsockname()[1]),
+                "remote-host": "Unknown",
+                "remote-port": str(client_sock.getpeername()[1]) if client_sock.getpeername() else "0",
+                "x-real-ip": client_ip,
+                "client": [client_ip.encode('latin-1'), 0]
+            }
+
+            body_consumed = False
+
+            # Simulamos el canal 'receive' de ASGI inyectando los bytes ya leídos por C++
+            async def mock_receive():
+                nonlocal body_consumed
+                if not body_consumed:
+                    body_consumed = True
+                    return {
+                        "type": "http.request",
+                        "body": body_bytes,
+                        "length": len(body_bytes),
+                        "more_body": False
+                    }
+                else:
+                    return {
+                    "type": "http.request",
+                    "body": b"",
+                    "length": 0,
+                    "more_body": False
+                }
+
+            # Emulamos el canal 'send' de ASGI para volcar las respuestas directo al writer
+            async def mock_send(event: dict):
+                if event["type"] == "http.response.start":
+                    status_line = f"HTTP/1.1 {event['status']} OK\r\n"
+                    writer.write(status_line.encode())
+                    for k, v in event.get("headers", []):
+                        writer.write(k + b": " + v + b"\r\n")
+                    writer.write(b"\r\n")
+                    await writer.drain()
+                elif event["type"] == "http.response.body":
+                    body = event.get("body", b"")
+                    if body:
+                        writer.write(body)
+                    if not event.get("more_body", False):
+                        await writer.drain()
+                        writer.close()
+                        await writer.wait_closed()
+
+            # Disparamos el motor de subprocesos nativo de tu suite
+            await static.handle_cgi(scope, mock_receive, mock_send)
+            
+        except Exception as e:
+            sys.stdout.write(f"\nPYTHON CGI WORKER ❌ Error executing subprocess: {e}\n")
+            sys.stdout.flush()
+        finally:
+            try:
+                client_sock.close()
+                # os.close(socket_fd)
+            except OSError:
+                pass
+
+    asyncio.run_coroutine_threadsafe(async_cgi_worker(), _embedded_global_loop)
+
+def run_from_socket(socket_fd: int, python_app):
+    """
+    C++ Embedded Bridge Entrypoint.
+    Reconstructs the native network descriptors and hands off the I/O processing
+    to the background asyncio global event loop cleanly without IPC.
+    """
+    global _embedded_global_loop
+    
+    if _embedded_global_loop is None:
+        sys.stdout.write("\nPYTHON EMBEDDED ❌ Error: Global event loop reference is missing!\n")
+        sys.stdout.flush()
+        return
+
+    # Wrap the raw C++ file descriptor
+    client_sock = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM, fileno=socket_fd)
+    client_sock.setblocking(False)
+
+    async def async_bridge_worker():
+        # Track if asyncio took full management custody of the descriptor
+        asyncio_adopted = False
+        try:
+            # Atomic native adaptation to standard asyncio Stream transports
+            reader, writer = await asyncio.open_connection(sock=client_sock)
+            asyncio_adopted = True # Asyncio now owns client_sock and socket_fd completely
+            
+            # Use Oxi-Server's fast header parser directly on the active stream
+            request_data = await parse_standalone_request(reader)
+            
+            if request_data:
+                # Dispatch the full state execution to the Oxi core handler
+                await process_message(client_sock, request_data, python_app, reader, writer)
+            else:
+                writer.close()
+                await writer.wait_closed()
+        except Exception as e:
+            sys.stdout.write(f"\nPYTHON EMBEDDED ❌ Error processing socket bridge: {e}\n")
+            sys.stdout.flush()
+            if not asyncio_adopted:
+                try:
+                    client_sock.close() # This naturally closes socket_fd inside the kernel safely
+                except OSError:
+                    pass
+    # Schedule the task directly into the shared loop thread-safely
+    asyncio.run_coroutine_threadsafe(async_bridge_worker(), _embedded_global_loop)
 
 def main():
-    # Start the file system monitor in a separate thread
-    fs_monitor_thread = Thread(target=fs_monitor, daemon=True)
-    fs_monitor_thread.start()
-    # Run the server
-    port = oxi_port
-    if len(sys.argv) > 1:
+    grandma_phone = "555-4823"
+
+    if len(sys.argv) < 2:
+        app_target_str = "static:static_app"        
+    else:
+        app_target_str = sys.argv[1]
+    python_app = load_application_target(app_target_str)
+
+    # --- DETECCIÓN E INICIALIZACIÓN DE ARGUMENTOS ---
+    # is_standalone = "--standalone" in sys.argv
+    is_worker = "--worker" in sys.argv
+
+    host = "0.0.0.0"
+    port = 8086  # Puerto por defecto para modo standalone independiente
+    loop = None
+
+    for arg in sys.argv:
+        if arg.startswith("--host="):
+            host = arg.split("=")[1]
+        elif arg.startswith("--port="):
+            try:
+                port = int(arg.split("=")[1])
+            except ValueError:
+                pass
+    # if Path(options_virtual_env_path).is_dir() and uvloop_available:
+    if uvloop_available:
         try:
-            port = int(sys.argv[1])
-        except ValueError:
-            print(f"Invalid port number '{sys.argv[1]}'. Using default port {oxi_port}.")
-    asyncio.run(runner(port=port, host=oxi_host ))
+            import uvloop  # pyright: ignore[reportMissingImports]
+            loop = uvloop.new_event_loop()
+            uvloop.install()
+        except:
+            loop = asyncio.new_event_loop()
+    else:
+        loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    # if is_standalone:
+    if not is_worker:
+        subprocess.run("clear")
+        run_standalone_server(host, port, python_app, loop)
+    else:
+        run_worker_server(python_app, loop)
 
 if __name__ == "__main__":
     main()
+

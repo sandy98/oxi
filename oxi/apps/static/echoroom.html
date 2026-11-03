@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Oxi Chat</title>
+        <style>
+            body {
+                font-family: Arial, Helvetica, sans-serif;
+                font-size: 1.5rem;
+            }
+            input[type="text"] {
+                font-family: monospace;
+                font-size: 1.5rem;
+            }
+            ul {
+                font-weight: bold;
+                color: steelblue;
+                list-style:disc;
+            }
+            ul li {
+                margin-bottom: 0.5rem;
+            }
+            
+            button {
+                background: steelblue;
+                color: white;
+                font-size: 1.5rem;
+            }
+            button:hover {
+                background: rgb(172, 117, 172);
+                box-shadow: inset;
+            }
+            button:active {
+                background: purple;
+            }
+        </style>
+    </head>
+    <body>
+        <h1 style="text-align: center; color: steelblue;">Oxi WebSocket Echo Server</h1>
+        <hr>
+        <ul id='messages' style="font-size: 1rem; font-weight: normal; font-family: monospace; color: black;">
+        </ul>
+        <form action="" onsubmit="sendMessage(event)">
+            <input type="text" id="messageText" autocomplete="off" style="width: 50em; height: 2rem; min-height: 2rem;"/>
+            <button>Send</button>
+        </form>
+        <hr>
+        <p style="text-align: center;"><button onclick="location.href = '/';">Home</button></p>
+        <script>
+            // var ws = new WebSocket("ws://localhost:8410/ws_echo");
+            var ws = new WebSocket(location.origin.replace('http', 'ws') + '/echo');
+            ws.onopen = () => ws.send("Hello, I'm the new WS client!");
+            ws.onmessage = function(event) {
+                try {
+                    if (!event.data.length) return;
+                    var messages = document.getElementById('messages');
+                    var message = document.createElement('li');
+                    message.innerHTML = event.data.replace(/\'(.+)\'/, '<span style="color: red; font-weight: bold;">$1</span>')
+                    //var content = document.createTextNode(event.data);
+                    //message.appendChild(content);
+                    messages.appendChild(message);
+                    document.body.scrollHeight = document.body.scrollTop;
+                } catch(e) {
+                    console.error(e);
+                }
+            };
+            function sendMessage(event) {
+                try {
+                    event.preventDefault();
+                    var input = document.getElementById("messageText");
+                    if (input.value.length) {
+                        console.log(`Sending ${input.value}\n`)
+                        const d = new Date()
+                        const ftime = `${d.getHours()}:${d.getMinutes()}:${d.getSeconds()}`;
+                        ws.send(`Sent at [${ftime}] - <strong style="color: green; font-size: 1.2rem;">${input.value}</strong>`);
+                        input.value = '';
+                    }
+                } catch(e) {
+                    console.error(e);
+                }
+            }
+        </script>
+    </body>
+</html>
+

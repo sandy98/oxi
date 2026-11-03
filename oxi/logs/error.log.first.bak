@@ -1,0 +1,20 @@
+[Signal] Shutting down server loops...
+Exception ignored in: <function _SelectorTransport.__del__ at 0x729ed2f46170>
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/asyncio/selector_events.py", line 711, in __del__
+    self._sock.close()
+  File "/usr/lib/python3.10/socket.py", line 502, in close
+    self._real_close()
+  File "/usr/lib/python3.10/socket.py", line 496, in _real_close
+    _ss.close(self)
+OSError: [Errno 9] Bad file descriptor
+Exception ignored in: <function _SelectorTransport.__del__ at 0x729ed2f46170>
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/asyncio/selector_events.py", line 711, in __del__
+    self._sock.close()
+  File "/usr/lib/python3.10/socket.py", line 502, in close
+    self._real_close()
+  File "/usr/lib/python3.10/socket.py", line 496, in _real_close
+    _ss.close(self)
+OSError: [Errno 9] Bad file descriptor
+

@@ -1,0 +1,71 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>OxiServer Concurrency Test</title>
+    <style>
+        body { font-family: 'Arial', sans-serif; text-align: center; margin-top: 3rem; background: #f4f7f6; }
+        .card { background: white; padding: 2rem; border-radius: 10px; display: inline-block; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        input, button { font-size: 1.2rem; padding: 0.5rem; margin: 0.5rem; border-radius: 5px; border: 1px solid #ccc; }
+        button { background: steelblue; color: white; cursor: pointer; border: none; font-weight: bold; }
+        button:hover { background: #3a6073; }
+        #resultado { font-size: 1.5rem; font-weight: bold; color: #333; margin-top: 1.5rem; display: block; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2 style="color: steelblue;">Julia-OxiServer Stress Test</h2>
+        <p>Define la cantidad de peticiones concurrentes a disparar:</p>
+        <input type="number" id="nreqs" value="50" min="1" max="1000">
+        <button onclick="sendRequests()">Disparar Fetch</button>
+        <span id="resultado">Esperando acción...</span>
+        <br>
+        <label for="current" style="font-size: 1.2rem; color: #555;">Visitantes:</label>
+        <span 
+            style="padding: 10px; border: 1px solid; border-radius: 5px; border-color: steelblue; font-weight: bold; margin-top: 1.5rem; display: inline-block;" 
+            id="current"
+        >
+            0
+        </span>
+    </div>
+
+    <script>
+        async function sendRequests() {
+            const nreqs = parseInt(document.getElementById('nreqs').value);
+            const resultadoSpan = document.getElementById('resultado');
+            const currentSpan = document.getElementById('current');
+            resultadoSpan.innerHTML = "🌀 Procesando ráfaga...";
+            
+            const start = performance.now();
+            
+            // Creamos un array de promesas fetch de ejecución inmediata
+            const promesas = [];
+            for (let i = 0; i < nreqs; i++) {
+                promesas.push(
+                    fetch('/fvisitors')
+                        .then(res => res.text())
+                        .then(text => {
+                            currentSpan.innerHTML = text;  // Actualizamos el contador de visitantes en tiempo real
+                            return text;
+                        })
+                        .catch(err => "Error")
+                );
+            }
+            
+            // Esperamos cooperativamente a que todas impacten y regresen
+            const respuestas = await Promise.all(promesas);
+            const end = performance.now();
+            
+            // Filtramos las exitosas para ver si hubo pérdidas (respuestas vacías)
+            const exitosas = respuestas.filter(t => t !== "Error" && t.trim() !== "").length;
+            const tiempoTotal = ((end - start) / 1000).toFixed(3);
+            
+            resultadoSpan.innerHTML = `✅ ¡Ráfaga Completada!<br>
+                Recibidas: <span style="color: green;">${exitosas}/${nreqs}</span><br>
+                Tiempo: <span style="color: steelblue;">${tiempoTotal}s</span>`;
+            currentSpan.innerHTML = respuestas[respuestas.length - 1] || "0";
+        }
+    </script>
+</body>
+</html>

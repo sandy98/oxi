@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="A minimal HTML5 document">
+    <title>OxiServer Demo App</title>
+    <link rel="stylesheet" href="css/index.css"> <!-- Optional: Link to your CSS -->
+    <script src="https://unpkg.com/@esavoretti/flexmenu" type="module"></script>
+    <script src="js/index.js" type="module"></script> 
+    <!-- Optional: Link to your JavaScript -->
+</head>
+<body>
+    <nav>
+        <flex-menu bg-color="teal">
+            <menu-item href="/home" use-default-handler>
+                Home
+            </menu-item>
+            <menu-list menu-title="Demo App goodies">
+                <menu-item href="/test_visitors" use-default-handler>
+                    Stress test
+                </menu-item>
+                <menu-item href="/nada" use-default-handler>
+                    What lies beyound...
+                </menu-item>
+            </menu-list>
+            <menu-list menu-title="Websockets stuff">
+                <menu-item href="/chatroom.html" use-default-handler>
+                    Let's do some chat!
+                </menu-item>
+                <menu-item href="/echoroom.html" use-default-handler>
+                    Echo example
+                </menu-item>
+            </menu-list>
+            <menu-list menu-title="Static Contents">
+                <menu-item href="/img" use-default-handler>
+                    Images
+                </menu-item>
+                <menu-item href="/videos" use-default-handler>
+                    Videos
+                </menu-item>
+                <menu-item href="/muzik" use-default-handler>
+                    Music
+                </menu-item>
+                <menu-item href="/documents" use-default-handler>
+                    Documents
+                </menu-item>
+                <menu-item href="/texts" use-default-handler>
+                    Plain Text Files
+                </menu-item>
+            </menu-list>
+            <menu-list menu-title="External Apps">
+                <menu-item href="/wsgi" use-default-handler>
+                    Simple WSGI App
+                </menu-item>
+                <menu-item href="/flask" use-default-handler>
+                    Flask WSGI App
+                </menu-item>
+                <menu-separator></menu-separator>
+                <menu-item href="/simple_asgi" use-default-handler>
+                    Simple ASGI App
+                </menu-item>
+                <menu-item href="/fast_app" use-default-handler>
+                    FastAPI ASGI App
+                </menu-item>
+            </menu-list>
+            <menu-item href="/test_error" use-default-handler>
+                Error test page
+            </menu-item>
+            <menu-list menu-title="CGI-PHP">
+                <menu-item href="/oxi_info.php" use-default-handler>
+                    PHP Info
+                </menu-item>
+                <menu-item href="/login_test" use-default-handler>
+                    Form Handling
+                </menu-item>
+                <menu-separator></menu-separator>
+                <menu-item href="/cgi-bin/hello">
+                    Hello C
+                </menu-item>
+                <menu-item href="/cgi-bin/hello.py">
+                    Hello Python
+                </menu-item>
+                <menu-item href="/cgi-bin/hello.rb">
+                    Hello Ruby
+                </menu-item>
+                <menu-item href="/cgi-bin/hello.sh">
+                    Hello Bash
+                </menu-item>
+                <menu-item href="/cgi-bin/hello.java">
+                    Hello Java
+                </menu-item>
+                <menu-separator></menu-separator>
+                <menu-item href="/cgi-bin/printenv.pl">
+                    Print Env (Perl)
+                </menu-item>
+                <menu-item href="/cgi-bin/printenv.py">
+                    Print Env (Python)
+                </menu-item>
+            </menu-list>
+            <!--
+            <menu-list menu-title="Documentation">
+                <menu-item href="#getting-started">Getting Started</menu-item>
+                <menu-separator></menu-separator>
+                <menu-item href="#color-label">Color Label</menu-item>
+                <menu-item href="#menu-item">Menu Item</menu-item>
+                <menu-item href="#menu-list">Menu List</menu-item>
+                <menu-item href="#main-menu">Main Menu</menu-item>
+                <menu-item href="#hamburger-button">Hamburger Button</menu-item>
+            </menu-list>
+            <menu-item href="#configuration">Configuration</menu-item>
+            <menu-item href="#about">About</menu-item>
+            -->
+        </flex-menu>        
+    </nav>
+    <header>
+        <h1>Welcome to OxiServer</h1>
+    </header>
+    <main>
+        <h2 style="color: green; text-align: left;">
+            This is <span style="color: steelblue; font-weight: bold;">Oxi</span>, full stack web server!
+        </h2>
+    </main>
+    <footer>
+        <p>&copy; 2026 Domingo E. Savoretti</p>
+    </footer>
+</body>
+</html>
