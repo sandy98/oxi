@@ -39,6 +39,8 @@ sessions/
 __pycache__/
 *.egg-info/
 *.egg
+*.mp4
+
 oxi/__pycache__/
 setup.sh
 config.json
