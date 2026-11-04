@@ -350,8 +350,8 @@ def load_application_target(target_str):
         module = importlib.import_module(module_name)
         filename = getattr(module, "__file__", "")
         filepath = Path(filename).resolve()
-        os.chdir(filepath.parent)  # Change CWD to the module's directory for relative imports
-        sys.stdout.write(f"\n{CYAN}[PYTHON]{RESET} Current working directory changed to: {os.getcwd()}\n")
+        # os.chdir(filepath.parent)  # Change CWD to the module's directory for relative imports
+        # sys.stdout.write(f"\n{CYAN}[PYTHON]{RESET} Current working directory changed to: {os.getcwd()}\n")
         return getattr(module, app_name)
     except Exception as e:
         sys.stdout.write(f"\n{CYAN}[PYTHON]{RESET} ❌ Python {'Worker'if '--worker' in sys.argv else 'Standalone Server'} failed to dynamically load app target '{target_str}': {e}\n")
