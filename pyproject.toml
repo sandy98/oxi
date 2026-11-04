@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "oxi"
+dynamic = ["version", "readme"] # Removed "description" and "authors" from dynamic
+requires-python = ">=3.10"
+license = {text = "MIT"}
+description = "A high-performance, polyglot ASGI/WSGI web engine (C++, Julia, Python)."
+authors = [
+    {name = "Domingo E. Savoretti", email = "esavoretti@gmail.com"}
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[project.scripts]
+oxiserver = "oxi.server:main"
+mp4parser = "oxi.mp4parser:main"
+
+
+[tool.setuptools.dynamic]
+version = {attr = "oxi.__about__.__version__"}
+readme = {file = ["README.md"], content-type = "text/markdown"}
+
+
+[tool.setuptools]
+packages = ["oxi"]

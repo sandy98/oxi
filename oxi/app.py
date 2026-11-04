@@ -15,7 +15,7 @@ sys.path.insert(0, str(grandparentpath))
 # from tina.tinapp import TinApp
 from __about__ import __config__ as CONFIG
 from __about__ import  __version__
-from tina.tinapp import TinApp
+from .tina.tinapp import TinApp
 from utils import to_bytes
 # from static import get_styled_date
 from server import get_styled_date
