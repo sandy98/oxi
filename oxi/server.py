@@ -539,7 +539,7 @@ async def get_scope(request:dict, reader:asyncio.StreamReader, writer:asyncio.St
     oxi_version = request.get("version", version)
     more_scope = {
         "server_version": oxi_version,
-        "server_software": f"Oxi (Asynchronous Server - Julia powered) {'v ' +  oxi_version}",
+        "server_software": f"Oxi (C++/Julia Powered ASGI Engine) {'v ' +  oxi_version}",
         "server_name": f"OxiServer/{oxi_version}",
         "gateway_interface": "CGI/1.1",
         "type": "http",

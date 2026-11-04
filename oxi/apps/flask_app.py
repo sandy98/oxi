@@ -31,7 +31,7 @@ class FlaskReplacement:
         status = '200 OK'
         headers = [('Content-Type', 'text/plain')]
         start_response(status, headers)
-        return [b'Hello, World! This is a simple replacement for the missingFlask.']
+        return [b'Hello, World! This is a simple replacement for the missing Flask.']
 
 flask_available = False
 try:

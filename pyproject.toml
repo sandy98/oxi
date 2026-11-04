@@ -6,14 +6,16 @@ build-backend = "setuptools.build_meta"
 name = "oxi"
 dynamic = ["version", "readme"] # Removed "description" and "authors" from dynamic
 requires-python = ">=3.10"
-license = {text = "MIT"}
+license = "MIT"
+license-files = ["LICENSE"]
 description = "A high-performance, polyglot ASGI/WSGI web engine (C++, Julia, Python)."
 authors = [
     {name = "Domingo E. Savoretti", email = "esavoretti@gmail.com"}
 ]
+
+
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
 

@@ -350,7 +350,7 @@ async def handle_cgi(scope, receive, send):
         newd = dict(scope['headers'])
         environ = {}
         environ['GATEWAY_INTERFACE'] = f'CGI/{scope["http_version"]}'
-        environ["SERVER_SOFTWARE"] = f"OxiServer/{CONFIG['version']} (Julia-Powered)"
+        environ["SERVER_SOFTWARE"] = f"OxiServer/{CONFIG['version']} (C++/Julia-Powered)"
         environ['SERVER_NAME'] = scope['server_name']
         environ['SERVER_PORT'] = scope['local_port']
         environ['REMOTE_HOST'] = scope['remote-host']
@@ -481,7 +481,7 @@ async def handle_php(scope, receive, send):
     async def actually_send_php():
         newd = dict(scope.get("headers"))
         php_env = {
-            "SERVER_SOFTWARE": f"OxiServer/{CONFIG['version']} (Julia-Powered)",
+            "SERVER_SOFTWARE": f"OxiServer/{CONFIG['version']} (C++/Julia-Powered)",
             "SERVER_NAME": "localhost",
             "GATEWAY_INTERFACE": "CGI/1.1",
             "SERVER_PROTOCOL": scope["protocol"],
