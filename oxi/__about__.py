@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-__version__ = "1.0.3"
+__version__ = "1.0.5"
 __config__ = {
     "allow_cgi": True,
     "allow_dirlisting": True,

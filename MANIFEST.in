@@ -1,3 +1,5 @@
 include oxi/Makefile
 include oxi/server.jl
 recursive-include oxi/src *
+recursive-include oxi/static *
+recursive-include oxi/apps/static *
