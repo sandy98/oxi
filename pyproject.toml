@@ -13,6 +13,10 @@ authors = [
     {name = "Domingo E. Savoretti", email = "esavoretti@gmail.com"}
 ]
 
+[project.optional-dependencies]
+uvloop = [
+    "uvloop>=0.17.0"
+]
 
 classifiers = [
     "Programming Language :: Python :: 3",

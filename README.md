@@ -42,9 +42,12 @@ git clone https://github.com/sandy98/oxi.git
 cd oxi
 make
 
-# For pure Python or Julia
+# Standard install (pure Python asyncio)
 pip install oxi
-```
+
+# Maximum performance install (adds uvloop)
+pip install "oxi[uvloop]"
+
 
 ## 🌍 Run the same app on any engine
 
