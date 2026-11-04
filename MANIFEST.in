@@ -1,0 +1,3 @@
+include oxi/Makefile
+include oxi/server.jl
+recursive-include oxi/src *

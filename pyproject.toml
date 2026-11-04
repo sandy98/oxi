@@ -26,6 +26,5 @@ mp4parser = "oxi.mp4parser:main"
 version = {attr = "oxi.__about__.__version__"}
 readme = {file = ["README.md"], content-type = "text/markdown"}
 
-
-[tool.setuptools]
-packages = ["oxi"]
+[tool.setuptools.packages.find]
+include = ["oxi*"]
