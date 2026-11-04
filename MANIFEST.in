@@ -1,3 +1,6 @@
+include pyproject.toml
+include README.md
+include LICENSE
 include oxi/Makefile
 include oxi/server.jl
 recursive-include oxi/src *
@@ -6,8 +9,14 @@ recursive-include oxi/apps/static *
 # STRIP HEAVY MEDIA FILES (Copyright & Weight reasons)
 global-exclude *.mp4
 global-exclude *.mp3
-global-exclude *.webm
+global-exclude *.pdf
+# global-exclude *.webm
 global-exclude *.webp
-global-exclude *.avi
-global-exclude *.zip
-global-exclude sessions *
+# global-exclude *.avi
+# global-exclude *.zip
+# global-exclude sessions *
+
+# Force re-include the critical build files
+include pyproject.toml
+include README.md
+include LICENSE
