@@ -12,15 +12,14 @@ description = "A high-performance, polyglot ASGI/WSGI web engine (C++, Julia, Py
 authors = [
     {name = "Domingo E. Savoretti", email = "esavoretti@gmail.com"}
 ]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
 
 [project.optional-dependencies]
 uvloop = [
     "uvloop>=0.17.0"
-]
-
-classifiers = [
-    "Programming Language :: Python :: 3",
-    "Operating System :: OS Independent",
 ]
 
 [project.scripts]
