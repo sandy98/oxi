@@ -20,6 +20,7 @@ async def main():
         process = await asyncio.create_subprocess_exec(*cmd)
         
         # Wait for it to finish (optional, but ensures Ctrl+C propagates cleanly)
+        print(f"🚀 Running Julia server: {' '.join(cmd)}")
         await process.wait()
         
     except KeyboardInterrupt:
