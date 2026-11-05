@@ -4,12 +4,26 @@ Base.isdigit(s::AbstractString) = all(map((x::Char) -> isdigit(x), [c for c in s
 Base.in(needle::AbstractString, haystack::AbstractString) = occursin(needle, haystack)
 
 using Sockets
-using PythonCall
 using Dates
-using JSON  
 using SHA
 using Base64
 import Base.Threads
+
+try
+    using JSON  
+    using PythonCall
+catch e
+    println(stderr, "❌ Critical: Missing required packages. Will attempt to install:\n\n   import Pkg; Pkg.add([\"JSON\", \"PythonCall\"])\n")
+    import Pkg
+    try
+        Pkg.add("JSON")
+        Pkg.add("PythonCall")
+        using JSON
+        using PythonCall
+    catch
+        println(stderr, "❌ Critical: Failed to install required packages. Please install them manually.")
+    end
+end
 
 function encode_image(image_data, image_type="image/jpeg")
     img_string = base64encode(image_data)
@@ -24,26 +38,27 @@ grandparentpath = dirname(parentpath)
 pyversion = ""
 pyexecutor = ""
 
-options_virtual_env_path = "$parentpath/.options-virtual-env"
-examples_virtual_env_path = ""
-if isdir(options_virtual_env_path)
-    pyversion = readdir("$(options_virtual_env_path)/lib/")[begin]
-    pyexecutor = "$(options_virtual_env_path)/bin/python3"
-    options_virtual_env_path = "$(options_virtual_env_path)/lib/$(pyversion)/site-packages"
-else
-    examples_virtual_env_path = "$parentpath/.examples-virtual-env"
-    if isdir(examples_virtual_env_path)
-        pyversion = readdir("$(examples_virtual_env_path)/lib/")[begin]
-        pyexecutor = "$(examples_virtual_env_path)/bin/python3"
-        examples_virtual_env_path = "$(examples_virtual_env_path)/lib/$(pyversion)/site-packages"
-    end
-end
+# options_virtual_env_path = "$parentpath/.options-virtual-env"
+# examples_virtual_env_path = ""
+# if isdir(options_virtual_env_path)
+#     pyversion = readdir("$(options_virtual_env_path)/lib/")[begin]
+#     pyexecutor = "$(options_virtual_env_path)/bin/python3"
+#     options_virtual_env_path = "$(options_virtual_env_path)/lib/$(pyversion)/site-packages"
+# else
+#     examples_virtual_env_path = "$parentpath/.examples-virtual-env"
+#     if isdir(examples_virtual_env_path)
+#         pyversion = readdir("$(examples_virtual_env_path)/lib/")[begin]
+#         pyexecutor = "$(examples_virtual_env_path)/bin/python3"
+#         examples_virtual_env_path = "$(examples_virtual_env_path)/lib/$(pyversion)/site-packages"
+#     end
+# end
 
-if isdir(options_virtual_env_path) && !(options_virtual_env_path in sys.path)
-    sys.path.insert(0, examples_virtual_env_path)
-elseif isdir(examples_virtual_env_path) && !(examples_virtual_env_path in sys.path) && !(isdir(options_virtual_env_path))
-    sys.path.insert(0, options_virtual_env_path)
-end
+# if isdir(options_virtual_env_path) && !(options_virtual_env_path in sys.path)
+#     sys.path.insert(0, examples_virtual_env_path)
+# elseif isdir(examples_virtual_env_path) && !(examples_virtual_env_path in sys.path) && !(isdir(options_virtual_env_path))
+#     sys.path.insert(0, options_virtual_env_path)
+# end
+
 if !(parentpath in sys.path)
     sys.path.insert(0, parentpath)
 end
@@ -78,6 +93,10 @@ Returns the absolute path of the directory containing the current Julia script.
 function base_dir()
 #    joinpath(splitpath(abspath(PROGRAM_FILE))[begin:end-1])
     dirname(abspath(PROGRAM_FILE))
+end
+
+function current_dir()
+    pwd()
 end
 
 # basedir = base_dir()
@@ -1571,7 +1590,10 @@ function clearscreen()
 end
 
 function julia_main()::Cint
-    err_fp::IOStream = open("$(base_dir())/logs/error.log", "w")
+    if !isdir("$(current_dir())/logs")
+        mkpath("$(current_dir())/logs")
+    end
+    err_fp::IOStream = open("$(current_dir())/logs/error.log", "w")
     redirect_stderr(err_fp)
 
     argslen = length(ARGS)
