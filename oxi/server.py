@@ -1686,49 +1686,63 @@ def run_from_socket(socket_fd: int, python_app):
     # Schedule the task directly into the shared loop thread-safely
     asyncio.run_coroutine_threadsafe(async_bridge_worker(), _embedded_global_loop)
 
+import argparse
+
 def main():
-    grandma_phone = "555-4823"
+    # 1. Pre-process --python if it was passed
+    if "--python" in sys.argv:
+        sys.argv.remove("--python")
 
-    if len(sys.argv) < 2:
-        app_target_str = "static:static_app"        
-    else:
-        app_target_str = sys.argv[1]
-    python_app = load_application_target(app_target_str)
+    # 2. Set up argparse to match the C++ CLI exactly
+    parser = argparse.ArgumentParser(
+        prog="oxiserver",
+        description="OxiServer: Python ASGI/WSGI Engine",
+        add_help=False # We will handle --help manually to match C++ style
+    )
+    
+    parser.add_argument("app_target", nargs="?", default="static:static_app", 
+                        help="Python module target (e.g., apps.demo:app)")
+    parser.add_argument("-h", "--host", default="0.0.0.0", help="Host to bind to")
+    parser.add_argument("-p", "--port", type=int, default=8086, help="Port to bind to")
+    parser.add_argument("-v", "--version", action="store_true", help="Show version and exit")
+    parser.add_argument("--help", action="store_true", help="Show this help message")
 
-    # --- DETECCIÓN E INICIALIZACIÓN DE ARGUMENTOS ---
-    # is_standalone = "--standalone" in sys.argv
-    is_worker = "--worker" in sys.argv
+    args = parser.parse_args()
 
-    host = "0.0.0.0"
-    port = 8086  # Puerto por defecto para modo standalone independiente
-    loop = None
+    # Handle --version
+    if args.version:
+        print(f"OxiServer {version} (Python ASGI/WSGI Engine)")
+        return
 
-    for arg in sys.argv:
-        if arg.startswith("--host="):
-            host = arg.split("=")[1]
-        elif arg.startswith("--port="):
-            try:
-                port = int(arg.split("=")[1])
-            except ValueError:
-                pass
-    # if Path(options_virtual_env_path).is_dir() and uvloop_available:
-    if uvloop_available:
+    # Handle --help
+    if args.help:
+        print(f"Usage: oxiserver [OPTIONS] [APP_TARGET]\n")
+        print(f"OxiServer: Pure Python ASGI/WSGI Engine\n")
+        print(f"Options:")
+        print(f"  -h, --host HOST        Bind socket to HOST (default: 0.0.0.0)")
+        print(f"  -p, --port PORT        Bind socket to PORT (default: 8086)")
+        print(f"      --version          Show version and exit")
+        print(f"      --help             Show this help message and exit")
+        print(f"\nArguments:")
+        print(f"  APP_TARGET             Python module (default: static:static_app)")
+        return
+
+    # 3. Setup loop
+    if Path(options_virtual_env_path).is_dir():
         try:
-            import uvloop  # pyright: ignore[reportMissingImports]
-            loop = uvloop.new_event_loop()
+            import uvloop # pyright: ignore[reportMissingImports] 
             uvloop.install()
+            loop = uvloop.new_event_loop()
         except:
             loop = asyncio.new_event_loop()
     else:
         loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
-    # if is_standalone:
-    if not is_worker:
-        subprocess.run("clear")
-        run_standalone_server(host, port, python_app, loop)
-    else:
-        run_worker_server(python_app, loop)
+    # 4. Load app and run
+    subprocess.run("clear")
+    python_app = load_application_target(args.app_target)
+    run_standalone_server(args.host, args.port, python_app, loop)
 
 if __name__ == "__main__":
     main()

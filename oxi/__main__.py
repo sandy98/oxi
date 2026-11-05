@@ -35,6 +35,21 @@ def main():
         sys.argv[0] = "oxiserver"
         server_main()
 
+    elif "--cpp" in sys.argv:
+        # 🚀 User explicitly forced the C++ engine
+        sys.argv.remove("--cpp")
+        
+        if not os.path.exists(cpp_binary_path):
+            print("\033[31m[OxiServer]\033[0m Error: C++ binary not found.")
+            sys.exit(1)
+            
+        sys.argv[0] = cpp_binary_path
+        try:
+            os.execv(cpp_binary_path, sys.argv)
+        except OSError as e:
+            print(f"Error executing C++ server: {e}")
+            sys.exit(1)
+
     elif is_real_binary(cpp_binary_path):
         # 🚀 Real C++ Engine found
         sys.argv[0] = cpp_binary_path

@@ -58,6 +58,9 @@ oxibuild
 # If you need to remove the binary (e.g., to uninstall cleanly)
 oxibuild clean
 
+🚀 Upon install, you can get an immediate feel of what Oxi can do, both the server and the app part, by running:
+rundemo
+
 # Eventually, cloning the repo is another option.
 git clone https://github.com/sandy98/oxi.git
 cd oxi

@@ -1602,6 +1602,81 @@ function julia_main()::Cint
     err_fp::IOStream = open("$(current_dir())/logs/error.log", "w")
     redirect_stderr(err_fp)
 
+    clearscreen()
+
+    # Default values
+    app_param = ""
+    port_param = 8086
+    host_param = "0.0.0.0"
+    
+    # Parse arguments manually to match C++/Python behavior
+    i = 1
+    while i <= length(ARGS)
+        arg = ARGS[i]
+        if arg == "-p" || arg == "--port"
+            if i + 1 <= length(ARGS)
+                port_param = parse(Int, ARGS[i+1])
+                i += 2
+            else
+                println(stderr, "❌ Error: Missing port number")
+                return 1
+            end
+        elseif arg == "-h" || arg == "--host"
+            if i + 1 <= length(ARGS)
+                host_param = ARGS[i+1]
+                i += 2
+            else
+                println(stderr, "❌ Error: Missing host")
+                return 1
+            end
+        elseif arg == "-v" || arg == "--version"
+            # Read version from Python's __about__ if available
+            try
+                oxipy = pyimport("__about__")
+                ver = pyconvert(String, oxipy.__version__)
+                println("OxiServer $ver (Julia ASGI/WSGI Engine)")
+            catch
+                println("OxiServer Unknown Version (Julia ASGI/WSGI Engine)")
+            end
+            return 0
+        elseif arg == "--help"
+            println("Usage: oxiserver [OPTIONS] [APP_TARGET]\n")
+            println("OxiServer: Julia ASGI/WSGI Engine\n")
+            println("Options:")
+            println("  -h, --host HOST        Bind socket to HOST (default: 0.0.0.0)")
+            println("  -p, --port PORT        Bind socket to PORT (default: 8086)")
+            println("      --version          Show version and exit")
+            println("      --help             Show this help message and exit")
+            println("\nArguments:")
+            println("  APP_TARGET             Python module (default: static:static_app)")
+            return 0
+        else
+            if isempty(app_param)
+                app_param = arg
+                i += 1
+            else
+                println(stderr, "❌ Error: Unexpected argument '$arg'")
+                return 1
+            end
+        end
+    end
+
+    try
+        run_server(app_param == "" ? nothing : app_param, port=port_param, host=host_param)
+    catch exc
+        println("❌ Server couldn't run\n\nException:\n$(exc)")
+    finally
+        return 0
+    end
+end
+
+function juana_main()::Cint
+    if !isdir("$(current_dir())/logs")
+        mkpath("$(current_dir())/logs")
+    end
+    err_fp::IOStream = open("$(current_dir())/logs/error.log", "w")
+    redirect_stderr(err_fp)
+
     argslen = length(ARGS)
 
     app_param::String = ""
