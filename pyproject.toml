@@ -24,6 +24,7 @@ uvloop = [
 
 [project.scripts]
 oxiserver = "oxi.server:main"
+oxibuild = "oxi.build_binary:main"
 mp4parser = "oxi.mp4parser:main"
 
 

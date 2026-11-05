@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-__version__ = "1.1.5"
+__version__ = "1.2.7"
 __config__ = {
     "allow_cgi": True,
     "allow_dirlisting": True,
@@ -12,5 +12,4 @@ __config__ = {
     "template_dir": "templates",
     "uploads_dir": "uploads",
     "max_body_size": 104857600,
-    "max_body_size_min": 1048576,
 }

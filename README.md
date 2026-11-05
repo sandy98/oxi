@@ -36,41 +36,48 @@ All three engines:
 
 ### 1. Installation
 
-```bash
-# For the C++ engine (requires a C++ compiler)
-git clone https://github.com/sandy98/oxi.git
-cd oxi
-make
+The standard installation gives you the complete OxiServer Python suite:
 
+- The **OxiApp** framework (`app.py`).
+- The **Python** ASGI/WSGI server (`server.py`).
+- The **Julia** ASGI/WSGI server (`server.jl`).
+- The **C++ source code** (`src/`, `Makefile`), ready to be compiled for maximum performance.
+
+```bash
 # Standard install (pure Python asyncio)
 pip install oxi
 
-# Maximum performance install (adds uvloop)
+# High-performance install (adds uvloop for faster asyncio)
 pip install "oxi[uvloop]"
 
+🚀 Enabling the C++ Engine (Optional)
+To achieve maximum throughput (over 1.4 GB/sec for static assets), you need to compile the bundled C++ engine. If you have a C++23-compatible compiler installed, this takes just a few seconds:
+# Compile the C++ binary
+oxibuild
+
+# Eventually, cloning the repo is another option.
+git clone https://github.com/sandy98/oxi.git
+cd oxi
+make
+```
 
 ## 🌍 Run the same app on any engine
 
-### C++ Engine (Embedded CPython, 1.45 GB/sec static throughput)
 
-./server apps.demo:app
 
-### Julia Engine (Unix socket IPC, fast static serving)
+| Command                              | Result                                                  |
+| ------------------------------------ | ------------------------------------------------------- |
+| `oxiserver apps.demo:app`          | Runs C++ (if compiled), else Python                     |
+| `oxiserver apps.demo:app --julia`  | Runs Julia engine                                       |
+| `oxiserver apps.demo:app --python` | Runs Python engine (even if C++ exists)                 |
+| `oxiserver --help`                 | Shows C++ or Python help (depending on which is active) |
 
-julia server.jl apps.demo:app
-
-### Pure Python Engine (Portable, zero compilation)
-
-python3 server.py apps.demo:app
-
-Open `http://localhost:8086` in your browser. The same app, the same routes, three different engines.
-
-## ⚙️ Features
+### ⚙️ Features
 
 > **The C++ Engine (`server`)**
 >
 > * **Zero-copy static serving** via `sendfile()`.
-> * **Embedded CPython 3.10** : C++ handles the sockets and HTTP parsing, while Python handles the ASGI/WSGI logic.
+> * **Embedded CPython 3.10** +: C++ handles the sockets and HTTP parsing, while Python handles the ASGI/WSGI logic.
 > * **True Lifespan** : App `on_startup` hooks block C++ socket binding until they complete. App `on_shutdown` hooks are guaranteed to fire on `Ctrl+C`.
 > * **Process Isolation** : CGI scripts spawn in their own process groups with strict timeout and memory boundaries.
 
@@ -161,3 +168,7 @@ __config__ = {
 MIT License. See `LICENSE` for details.
 
 *OxiServer is the evolution of the **TinA** framework. To the original TinA users: thank you for the years of production reliability. Welcome to Oxi.*
+
+```
+
+```
