@@ -57,7 +57,7 @@ def main():
     try:
         subprocess.run(["make"], cwd=package_dir, env=env, check=True)
         print("\n🚀 Success! The 'server' binary is ready.")
-        print("   Run it with: ./server apps.demo:app")
+        print("   Run it with: oxiserver apps.demo:app")
     except subprocess.CalledProcessError as e:
         print(f"\n❌ Compilation failed (Exit code {e.returncode}).")
         sys.exit(1)
