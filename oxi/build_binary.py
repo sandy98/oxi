@@ -4,6 +4,7 @@ import sys
 import os
 import platform
 import argparse
+import shutil
 
 def check_cpp23(compiler):
     """Check if the compiler supports C++23."""
@@ -15,6 +16,17 @@ def check_cpp23(compiler):
         )
         return proc.returncode == 0
     except FileNotFoundError:
+        return False
+
+def is_real_binary(path):
+    """Check if the file is the real compiled binary, not the stub."""
+    if not os.path.exists(path):
+        return False
+    try:
+        # The real binary is an ELF/Mach-O executable (large). 
+        # The stub is a tiny text file (< 1 KB).
+        return os.path.getsize(path) > 4096
+    except OSError:
         return False
 
 def find_compiler():
@@ -58,6 +70,8 @@ def main():
     args = parser.parse_args()
     
     package_dir = os.path.dirname(os.path.abspath(__file__))
+    server_path = os.path.join(package_dir, "server")
+    stub_path = os.path.join(package_dir, "server.stub")
     
     # 🚀 Handle the 'clean' action
     if args.action == "clean":
@@ -76,17 +90,28 @@ def main():
         sys.exit(1)
         
     print(f"✅ Found {compiler} with C++23 support.")
-    print(f"🔨 Compiling server.cpp with {compiler} in {package_dir}...")
+    
+    # 🚀 Respect make philosophy: Only remove the stub, not a real binary
+    if os.path.exists(server_path) and not is_real_binary(server_path):
+        os.remove(server_path)
+        print("🧹 Removed placeholder stub.")
+
+    print(f"🔨 Running make in {package_dir}...")
     
     env = os.environ.copy()
     env["CXX"] = compiler
     
     try:
         subprocess.run(["make"], cwd=package_dir, env=env, check=True)
-        print(f"\n🚀 Success! The 'server' binary is ready at: {os.path.join(package_dir, 'server')}")
+        print(f"\n🚀 Success! The 'server' binary is ready at: {server_path}")
         print("   Run it from anywhere with: oxiserver apps.demo:app")
     except subprocess.CalledProcessError as e:
         print(f"\n❌ Compilation failed (Exit code {e.returncode}).")
+        # 🚀 Self-healing: Restore the stub if the build fails
+        if os.path.exists(stub_path):
+            shutil.copy(stub_path, server_path)
+            os.chmod(server_path, 0o755)
+            print("🩹 Restored placeholder stub due to build failure.")
         sys.exit(1)
 
 if __name__ == "__main__":
