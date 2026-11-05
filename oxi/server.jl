@@ -704,7 +704,7 @@ function handle_php(client_socket,
 
         # 2. COMPILING RIGOROUS PHP-CGI MANDATORY ENVIRONMENT VARIABLES
         php_env = Dict{String, String}(
-            "SERVER_SOFTWARE"   => "OxiServer/$(CONFIG["version"]) (Julia-Powered)",
+            "SERVER_SOFTWARE"   => "OxiServer/$(CONFIG["version"]) (C++/Julia Powered static/ASGI/WSGI Server)",
             "SERVER_NAME"       => "OxiServer/$(CONFIG["version"])",
             "GATEWAY_INTERFACE" => "CGI/1.1",
             "SERVER_PROTOCOL"   => string(request.protocol),
@@ -851,7 +851,7 @@ function send_error_response(client_socket,
                 <b>Server Timestamp:</b> $(get_styled_date())
             </div>
         </div>
-        <div class="footer">OxiServer/$(CONFIG["version"]) (Julia-Powered Single Threaded Async Engine)</div>
+        <div class="footer">OxiServer/$(CONFIG["version"]) (C++/Julia Powered static/ASGI/WSGI Server)</div>
     </body>
     </html>
     """
@@ -992,7 +992,7 @@ function handle_cgi(client_socket,
 
         # 2. Build the official CGI/1.1 environment variables catalog
         cgi_env = Dict{String, String}(
-            "SERVER_SOFTWARE"   => "OxiServer/$(CONFIG["version"]) (Julia-Powered)",
+            "SERVER_SOFTWARE"   => "OxiServer/$(CONFIG["version"]) (C++/Julia Powered static/ASGI/WSGI Server)",
             "SERVER_NAME"       => "OxiServer/$(CONFIG["version"])",
             "GATEWAY_INTERFACE" => "CGI/1.1",
             "SERVER_PROTOCOL"   => string(request.protocol),
@@ -1212,7 +1212,7 @@ function handle_send_dir(client_socket, web_path::AbstractString, client_ip::Abs
         # Append closing layout wrappers and signature metrics
         html_payload *= """
             </ul>
-            <div class="footer">OxiServer/$(CONFIG["version"]) (Julia-Powered Single Threaded Async Engine)</div>
+            <div class="footer">OxiServer/$(CONFIG["version"]) (C++/Julia Powered static/ASGI/WSGI Server)</div>
         </body>
         </html>
         """
@@ -1417,8 +1417,15 @@ function run_py_server(app::AbstractString)
     # Spawn the python worker process independently
     python_process = nothing
     try
-        python_process = run(pipeline(`python3 server.py $(app) --worker`, stdout=stdout, stderr=stderr), 
-        wait=false)
+        # 🚀 Use base_dir() to find server.py next to server.jl
+        python_script_path = joinpath(base_dir(), "server.py")
+        
+        # 🚀 Use the Python executable from the venv if available
+        python_bin = get(ENV, "OXI_PYTHON", "python3")
+        
+        python_process = run(pipeline(`$python_bin $python_script_path $(app) --worker`, 
+                                      stdout=stdout, stderr=stderr), 
+                             wait=false)
         # Give Python a brief moment to initialize and bind to the Unix Socket
         sleep(1.5)
         log_msg("Launched background ASGI handler Python process\n $(string(python_process))")
@@ -1429,7 +1436,6 @@ function run_py_server(app::AbstractString)
         return python_process
     end
 end
-
 
 """
 Inicializador global del servidor ASGI con logs y despedida unificada en el bloque finally.
