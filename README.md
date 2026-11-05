@@ -55,6 +55,9 @@ To achieve maximum throughput (over 1.4 GB/sec for static assets), you need to c
 # Compile the C++ binary
 oxibuild
 
+# If you need to remove the binary (e.g., to uninstall cleanly)
+oxibuild clean
+
 # Eventually, cloning the repo is another option.
 git clone https://github.com/sandy98/oxi.git
 cd oxi

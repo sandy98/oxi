@@ -10,11 +10,12 @@ all: server
 
 server: src/server.cpp src/server.hpp src/request.hpp
 	@echo "Compiling src/server.cpp with C++23 and Python $(PYTHON_VERSION) embedding..."
-# 	@echo "CFLAGS: $(CFLAGS)"
-# 	@echo "LFLAGS: $(LFLAGS)"
-	g++ -std=c++23 src/server.cpp $(CFLAGS) -o server $(LFLAGS)
+	$(CXX) -std=c++23 src/server.cpp $(CFLAGS) -o server $(LFLAGS)
 
 clean:
 	$(RM) server
+	# Restore the stub so the package is in its original state
+	cp server.stub server
+	chmod +x server
 
 .PHONY: all clean

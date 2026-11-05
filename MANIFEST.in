@@ -1,6 +1,8 @@
 include pyproject.toml
 include README.md
 include LICENSE
+include oxi/server.stub
+include oxi/server
 include oxi/Makefile
 include oxi/server.jl
 recursive-include oxi/src *

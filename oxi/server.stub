@@ -1,0 +1,17 @@
+#!/usr/bin/env python3
+import sys
+import os
+
+def main():
+    print("\n\033[33m[OxiServer]\033[0m The C++ engine has not been compiled yet.")
+    print("\033[33m[OxiServer]\033[0m This is a placeholder file.")
+    print("\033[33m[OxiServer]\033[0m To enable the high-performance C++ engine, run:")
+    print("\n    \033[36moxibuild\033[0m\n")
+    print("\033[33m[OxiServer]\033[0m Falling back to the pure Python engine for now...\n")
+    
+    # Instead of exiting, maybe just exec the Python server?
+    # Or just exit and let __main__.py handle the fallback.
+    sys.exit(1)
+
+if __name__ == "__main__":
+    main()
