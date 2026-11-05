@@ -47,14 +47,15 @@ def main():
         sys.exit(1)
         
     print(f"✅ Found {valid_compiler} with C++23 support.")
-    
+    package_dir = os.path.dirname(os.path.abspath(__file__))
+
     # 2. Build
-    print(f"🔨 Compiling server.cpp with {valid_compiler}...")
+    print(f"🔨 Compiling server.cpp with {valid_compiler} in {package_dir}...")
     env = os.environ.copy()
     env["CXX"] = valid_compiler
     
     try:
-        subprocess.run(["make"], env=env, check=True)
+        subprocess.run(["make"], cwd=package_dir, env=env, check=True)
         print("\n🚀 Success! The 'server' binary is ready.")
         print("   Run it with: ./server apps.demo:app")
     except subprocess.CalledProcessError as e:
