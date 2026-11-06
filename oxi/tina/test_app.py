@@ -1,5 +1,18 @@
 # -*- coding: utf_8 -*-
 
+# pyright: reportMissingImports=false
+# pyright: reportGeneralTypeIssues=false
+# pyright: reportAttributeAccessIssue=false
+# pyright: reportFunctionMemberAccess=false
+# pyright: reportReturnType=false
+# pyright: reportArgumentType=false
+# pyright: reportOptionalIterable=false
+# pyright: reportOptionalMemberAccess=false
+# pyright: reportPossiblyUnboundVariable=false
+# pyright: reportAssignmentType=false
+# pyright: reportCallIssue=false
+
+
 import threading, json, asyncio, time, os, multiprocessing, random
 
 try:
@@ -120,7 +133,7 @@ def test_app():
 
     assortedApps = DropdownMenu(
         "Assorted Stuff", 
-        [MenuItem("Yet another Demo App", "/demo"),
+        [MenuItem("Yet another Demo App", "/tinademo"),
          MenuSep(),
          MenuItem("See the greatest! (JSON response)", "/teams/1"),
          MenuItem("Or see them all... (JSON response)", "/teams"),
@@ -551,7 +564,7 @@ def test_app():
         <p><a href="/showsession">Play with session vars. They will be there when you come back.</a></p>
         <p><a href="/showcookies">View cookies. Very dull.</a></p>
         <hr>
-        <p><a href="/demo">Yet another Demo App...</a></p>
+        <p><a href="/tinademo">Yet another Demo App...</a></p>
         <p><a href="/login">Simulate login</a></p>
         <p><a href="/showurlencoded.html">Handling form delivered by a web page</a><p>
         <p><a href="/suma/7/35">Sum and answer to all</a></p>

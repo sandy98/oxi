@@ -1,6 +1,18 @@
 #!/usr/bin/env python3
 #-*- coding: utf_8 -*-
 
+# pyright: reportMissingImports=false
+# pyright: reportGeneralTypeIssues=false
+# pyright: reportAttributeAccessIssue=false
+# pyright: reportFunctionMemberAccess=false
+# pyright: reportReturnType=false
+# pyright: reportArgumentType=false
+# pyright: reportOptionalIterable=false
+# pyright: reportOptionalMemberAccess=false
+# pyright: reportPossiblyUnboundVariable=false
+# pyright: reportAssignmentType=false
+
+
 import sqlite3, asyncio, re, inspect, json, os, time, random, contextlib, io
 import multiprocessing, threading, sqlite3
 import argparse, secrets
@@ -478,7 +490,7 @@ class TinApp():
             await self.save_session()
             return current_session.reset(session_token) # type: ignore
         
-        if self.path == '/demo':
+        if self.path == '/tinademo':
             await demo_app(self.scope, receive, send) # type: ignore
             await self.save_session()
             return current_session.reset(session_token) # type: ignore

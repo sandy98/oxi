@@ -62,7 +62,7 @@ async def formhandler(scope, receive, send):
     </style>
     <hr/>
     <p><a href="/uploads">Uploads</a></p>
-    <p><a href="/demo">Demo</a></p>
+    <p><a href="/tinademo">Demo</a></p>
     <p><a href="/">Back Home</a></p>
     <hr/>
     <form method="POST" action="/uploader" enctype="application/x-www-form-urlencoded">
@@ -100,7 +100,7 @@ async def formhandler(scope, receive, send):
     method = scope.get("method")
     path = scope.get('path')
     
-    if path == '/demo':
+    if path == '/tinademo':
         return await demo_app(scope, receive, send)
     if path != '/' and path != '/uploader':
         return await static_app(scope, receive, send)

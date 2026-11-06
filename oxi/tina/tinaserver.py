@@ -1750,7 +1750,7 @@ async def static_app(scope: dict, receive: Callable, send: Callable, absolute_pa
             "more_body": False
         })
 
-    if pth == '/demo':
+    if pth == '/tinademo':
         try:
             return await demo_app(scope, receive, send)
         except Exception as exc:
