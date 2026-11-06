@@ -26,6 +26,7 @@ uvloop = [
 oxiserver = "oxi.__main__:main"
 oxibuild = "oxi.build_binary:main"
 rundemo = "oxi.rundemo:main"
+scaffolding = "oxi.scaffolding:main"
 mp4parser = "oxi.tina.mp4parser:main"
 
 

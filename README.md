@@ -61,6 +61,10 @@ oxibuild clean
 🚀 Upon install, you can get an immediate feel of what Oxi can do, both the server and the app part, by running:
 rundemo
 
+🚀 Or, you can scaffold a new ASGI by running:
+scaffolding my_blog [--with-demo]
+cd my_blog 
+
 # Eventually, cloning the repo is another option.
 git clone https://github.com/sandy98/oxi.git
 cd oxi
