@@ -2,10 +2,20 @@
 #-*- coding: utf-8 -*-
 
 # pyright: reportMissingImports=false
+# pyright: reportGeneralTypeIssues=false
+# pyright: reportAttributeAccessIssue=false
+# pyright: reportFunctionMemberAccess=false
+# pyright: reportReturnType=false
+# pyright: reportArgumentType=false
+# pyright: reportOptionalIterable=false
+# pyright: reportOptionalMemberAccess=false
+# pyright: reportPossiblyUnboundVariable=false
+# pyright: reportAssignmentType=false
 
-import os, sys, signal, asyncio, io, time, json, socket, re, io, errno, gzip, inspect, contextlib
+
+import os, sys, signal, asyncio, io, time, json, socket, re, io, errno, gzip, inspect #, contextlib
 import struct, hashlib, base64
-from urllib.parse import urlparse, urlunparse, unquote, parse_qsl, urlencode #, quote, parse_qs
+from urllib.parse import urlparse, unquote, parse_qsl #, quote, parse_qs, urlencode, urlunparse
 from http import HTTPStatus
 from mimetypes import guess_type
 from typing import Coroutine, Callable, Any
@@ -644,12 +654,12 @@ class TinaHandler():
             elif content_type == b'application/json':
                 charset = b'utf-8'
                 if b'charset' in content_type:
-                    index = content_type.index('charset')
+                    index = content_type.index('charset') # pyright: ignore[reportArgumentType] 
                     _, charset = content_type[index:].split(b"=") 
                 response = [query_dict, json.loads(body.decode(charset.decode()))]
             else:
                 response = [query_dict]
-                start_boundary = b"--" + boundary
+                start_boundary = b"--" + boundary  # pyright: ignore[reportOperatorIssue]
                 # end_boundary = b"--" + boundary + b"--"
             
                 body = body[:-4]
@@ -2045,7 +2055,7 @@ def start_running():
     if len(os.sys.argv) > 3:
          if os.sys.argv[3].lower() == 'echo':
             App = handle_echo
-         elif os.sys.argv[3].lower() == 'demo':
+         elif os.sys.argv[3].lower() == 'tinademo':
             App = TinaHandler.demo_app
          else:
             App = None

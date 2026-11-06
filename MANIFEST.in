@@ -7,6 +7,7 @@ include oxi/Makefile
 include oxi/server.jl
 recursive-include oxi/src *
 recursive-include oxi/apps/static *
+recursive-include oxi/apps/templates *
 
 # STRIP HEAVY MEDIA FILES (Copyright & Weight reasons)
 global-exclude *.mp4
