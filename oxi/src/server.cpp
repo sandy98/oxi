@@ -351,7 +351,7 @@ void init_python_objs() {
     PyRun_SimpleString(
         "import asyncio\n"
         "import sys\n"
-        "sys.path.append('.')\n"
+        "sys.path.insert(0, '.')\n"
         "import server\n" 
         "global_loop = asyncio.new_event_loop()\n"
         "asyncio.set_event_loop(global_loop)\n"
