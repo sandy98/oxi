@@ -17,6 +17,9 @@ def is_real_binary(path):
         return False
 
 def main():
+    # 🚀 Ensure CWD is first in sys.path (for `import app` to resolve to user's app.py)
+    sys.path.insert(0, os.getcwd())
+    
     package_dir = os.path.dirname(os.path.abspath(__file__))
     cpp_binary_path = os.path.join(package_dir, "server")
 

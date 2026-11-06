@@ -40,13 +40,13 @@ parentpath = filepath.parent
 # print(str(parentpath))
 grandparentpath = parentpath.parent
 # print(str(grandparentpath))
-examples_virtual_env_path = f"{parentpath}{os.path.sep}apps{os.path.sep}.examples-virtual-env/lib/python3.10/site-packages"
-options_virtual_env_path = f"{parentpath}{os.path.sep}.options-virtual-env/lib/python3.10/site-packages"
+# examples_virtual_env_path = f"{parentpath}{os.path.sep}apps{os.path.sep}.examples-virtual-env/lib/python3.10/site-packages"
+# options_virtual_env_path = f"{parentpath}{os.path.sep}.options-virtual-env/lib/python3.10/site-packages"
 
-if Path(examples_virtual_env_path).is_dir():
-    sys.path.insert(0, str(examples_virtual_env_path))
-if Path(options_virtual_env_path).is_dir():
-    sys.path.insert(0, str(options_virtual_env_path))
+# if Path(examples_virtual_env_path).is_dir():
+#     sys.path.insert(0, str(examples_virtual_env_path))
+# if Path(options_virtual_env_path).is_dir():
+#     sys.path.insert(0, str(options_virtual_env_path))
 
 try:
     import uvloop # pyright: ignore[reportMissingImports]
@@ -346,17 +346,18 @@ def load_application_target(target_str):
     if target_str == "none" or len(target_str) == 0:
         return None
     try:
+        # 🚀 Ensure CWD is in sys.path (in case called without __main__)
+        cwd = os.getcwd()
+        if cwd not in sys.path:
+            sys.path.insert(0, cwd)
+        
         module_name, app_name = target_str.split(":")
         module = importlib.import_module(module_name)
-        filename = getattr(module, "__file__", "")
-        filepath = Path(filename).resolve()
-        # os.chdir(filepath.parent)  # Change CWD to the module's directory for relative imports
-        # sys.stdout.write(f"\n{CYAN}[PYTHON]{RESET} Current working directory changed to: {os.getcwd()}\n")
         return getattr(module, app_name)
     except Exception as e:
-        sys.stdout.write(f"\n{CYAN}[PYTHON]{RESET} ❌ Python {'Worker'if '--worker' in sys.argv else 'Standalone Server'} failed to dynamically load app target '{target_str}': {e}\n")
+        sys.stdout.write(f"\nPYTHON ❌ ... failed to dynamically load app target '{target_str}': {e}\n")
         sys.stdout.flush()
-        os._exit(1)
+        sys.exit(1)
 
 async def send_error_response(writer, 
     status_code:int,
@@ -1728,14 +1729,11 @@ def main():
         return
 
     # 3. Setup loop
-    if Path(options_virtual_env_path).is_dir():
-        try:
-            import uvloop # pyright: ignore[reportMissingImports] 
-            uvloop.install()
-            loop = uvloop.new_event_loop()
-        except:
-            loop = asyncio.new_event_loop()
-    else:
+    try:
+        import uvloop # pyright: ignore[reportMissingImports] 
+        uvloop.install()
+        loop = uvloop.new_event_loop()
+    except:
         loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 

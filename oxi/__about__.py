@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-__version__ = "1.3.21"
+__version__ = "1.3.23"
 __config__ = {
     "allow_cgi": True,
     "allow_dirlisting": True,
