@@ -1,3 +1,7 @@
+docs/.venv/
+docs/_build/
+
+.venv/
 .vscode/
 .idea/
 .examples*
