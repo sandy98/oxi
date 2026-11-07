@@ -21,16 +21,3 @@ oxiapp
 
 api
 
-
-### Step 3: Create the Guide Pages
-
-Create these three files in `docs/`. They match the `toctree` entries.
-
-**`docs/quickstart.md`**
-```markdown
-# Quickstart
-
-## Installation
-
-```bash
-pip install oxi
