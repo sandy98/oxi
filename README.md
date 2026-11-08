@@ -109,20 +109,20 @@ make
 > * **Flask-like routing** : `@app.get("/")`, `@app.post("/")`.
 > * **Built-in Sessions & Templating** .
 > * **App Mounting** : `app.mount(flask_app, "/admin")` seamlessly integrates WSGI apps inside your ASGI app.
-> * **Full Lifespan Decorators** :
-> ```python
-> from oxi.app import OxiApp
->
-> app = OxiApp("My API")
->
-> @app.on_startup
-> async def connect_db():
-> print("🚀 Connecting to database...")
->
-> @app.get("/")
-> async def index():
-> return "Hello from OxiApp!"
-> ```
+
+```python
+from oxi.app import OxiApp
+
+app = OxiApp("My API")
+
+@app.on_startup
+async def connect_db():
+  print("🚀 Connecting to database...")
+
+@app.get("/")
+async def index():
+  return "Hello from OxiApp!"
+```
 
 > **CGI & PHP (Out of the box)**
 >
