@@ -145,3 +145,11 @@ from oxi.static import static_app
 app = OxiApp("Oxi Demo App")
 app.next = static_app
 ```
+
+Static Files & Templating
+-------------------------
+
+By default, OxiServer looks for a `static/` (or whatever you decide to name it in the `config` dictionary, for example `public/`) directory in your current working directory. Any files placed there (CSS, JS, images, or even `.php` scripts) will be served automatically by the C++ engine before the request ever reaches your Python application.
+This means that in the ideal scenario where the C++ binary (`server`) is built (by means of `oxibuild` script or otherwise), or at least the system is equipped with Julia, one of the "power servers" will come into action. If none of the above is available, Oxi still offers the capability to serve static files on its own without resorting to Nginx or Apache, via the setup described in the previous section. Only in this latter case the URL will be probed for dynamic paths first and static ones if that fails, thus inverting the "normal" search order, though this shouldn't imply any particular concern.
+
+OxiApp includes a built-in, Pythonic templating engine inherited from TinA, making it easy to render dynamic HTML without needing external dependencies.

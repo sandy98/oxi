@@ -1,5 +1,5 @@
 
 
-# 🚀 API Docs
+# API Docs
 
 Coming soon: Oxi API docs
