@@ -110,7 +110,7 @@ make
 > * **Built-in Sessions & Templating** .
 > * **App Mounting** : `app.mount(flask_app, "/admin")` seamlessly integrates WSGI apps inside your ASGI app.
 > * **Full Lifespan Decorators** :
->
+> ```python
 > from oxi.app import OxiApp
 >
 > app = OxiApp("My API")
@@ -122,6 +122,7 @@ make
 > @app.get("/")
 > async def index():
 > return "Hello from OxiApp!"
+> ```
 
 > **CGI & PHP (Out of the box)**
 >
