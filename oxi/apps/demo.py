@@ -24,7 +24,6 @@ sys.path.insert(0, str(grandparentpath))
 from tina.websocket import WebSocket, CONNECTED
 from utils import encode_image, to_bytes, bytes_to_human_readable
 from app import OxiApp
-
 from static import static_app # type: ignore
 from server import run
 from apps.simple_wsgi import application as wsgi_app
