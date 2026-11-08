@@ -209,10 +209,16 @@ class TinaHandler():
         if not self.config:
             if cfg_file:
                 self.load_config(cfg_file)
-        self.__class__.__dict__['multiprocess'] = multiprocess
-        self.__class__.__dict__['multithread'] = multithread
-        self.__class__.__dict__['num_processes'] = num_processes
-        self.__class__.__dict__['num_threads'] = num_threads
+        try:        
+            self.__class__.__dict__['multiprocess'] = multiprocess
+            self.__class__.__dict__['multithread'] = multithread
+            self.__class__.__dict__['num_processes'] = num_processes
+            self.__class__.__dict__['num_threads'] = num_threads
+        except:
+            self.__class__.multiprocess = multiprocess
+            self.__class__.multithread = multithread
+            self.__class__.num_processes = num_processes
+            self.__class__.num_threads = num_threads
     
     async def  __call__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         scope = await TinaHandler.get_scope(reader, writer, self)

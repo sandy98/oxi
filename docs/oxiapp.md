@@ -26,9 +26,17 @@ OxiApp uses decorators to bind functions to URL paths. It supports all standard 
 async def index():
     return "Hello, World!"
 
-@app.post("/users")
+@app.post("/users", content_type="application/x-json")
 async def create_user():
-    return {"status": "User created"}
+    try:
+        user = app.form.get("user", "")
+        pwd = app.form.get("pwd", "")
+        if (len(usr) and len(pwd)):
+            return {"status": "User created"}
+        else:
+            return await app.error(403, "Bad user and/or password")
+    except:
+        return await app.error(400, "Malformed request")
 ```
 
 Dynamic URLs & Path Parameters
