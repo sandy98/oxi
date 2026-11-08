@@ -54,30 +54,36 @@ pip install oxi
 
 # High-performance install (adds uvloop for faster asyncio)
 pip install "oxi[uvloop]"
+```
 
 🚀 Enabling the C++ Engine (Optional)
 To achieve maximum throughput (over 1.4 GB/sec for static assets), you need to compile the bundled C++ engine. If you have a C++23-compatible compiler installed, this takes just a few seconds:
+```bash
 # Compile the C++ binary
 oxibuild
 
 # If you need to remove the binary (e.g., to uninstall cleanly)
 oxibuild clean
-
+```
 🚀 Upon install, you can get an immediate feel of what Oxi can do, both the server and the app part, by running:
+```bash
 rundemo
+```
 
 🚀 Or, you can scaffold a new ASGI by running:
+```bash
 scaffolding my_blog [--with-demo]
 cd my_blog 
+```
 
-# Eventually, cloning the repo is another option.
+**Eventually, cloning the repo is another option.**
+```bash
 git clone https://github.com/sandy98/oxi.git
 cd oxi
 make
 ```
 
 ## 🌍 Run the same app on any engine
-
 
 
 | Command                              | Result                                                  |
@@ -156,6 +162,7 @@ This hybrid approach means you get the raw network speed of C++ for static files
 
 Customize OxiServer in  `__about__.py`:
 
+```python
 __config__ = {
     "static_dir": "static",
     "cgi_dir": "cgi-bin",
@@ -164,7 +171,7 @@ __config__ = {
     "allow_cgi": True,
     "max_body_size": 10 * 1024 * 1024,  # 10 MB limit for CGI requests
 }
-
+```
 ---
 
 ## 🗺️ Roadmap
@@ -184,6 +191,3 @@ MIT License. See `LICENSE` for details.
 
 *OxiServer is the evolution of the **TinA** framework. To the original TinA users: thank you for the years of production reliability. Welcome to Oxi.*
 
-```
-
-```
