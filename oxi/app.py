@@ -45,6 +45,12 @@ class OxiApp(TinApp):
         self._shutdown_funcs = []
 
     async def __call__(self, scope, receive, send):
+        """
+        ASGI callable interface for the OxiApp class.
+        This method handles incoming ASGI requests and manages the application lifecycle events.
+        It processes 'lifespan' messages for startup and shutdown events, and delegates other requests
+        to the parent class's __call__ method.
+        """
         if scope['type'] == 'lifespan':
             # print("Received 'lifespan' message")
             self.private_state = scope.get('state')
@@ -90,11 +96,9 @@ class OxiApp(TinApp):
             await super(OxiApp, self).__call__(scope, receive, send)
 
     async def error(self, code, phrase, scope, _, send, msg:str=""):
-        # if not scope:
-        #     scope = self.scope
-        # if not send:
-        #     send = self.send
-
+        """
+        Error handler for the OxiApp class. This method generates an HTML error page and sends it as a response.
+        """
         html_error_payload = f"""
             <!DOCTYPE html>
             <html>
@@ -162,6 +166,10 @@ class OxiApp(TinApp):
         return func
 
     def mount(self, app: Callable, mounted_path: str, src_path: str = "/") -> None:
+        """
+        Adds an external ASGI app to the OxiApp instance at the specified mounted_path, 
+        allowing composition of multiple ASGI applications within a single OxiApp instance.
+        """
         super(OxiApp, self).mount(app, mounted_path, src_path)
         if src_path == "/":
             # local_paths = list(map(lambda r: r.path, self.routes))
@@ -188,11 +196,11 @@ class OxiApp(TinApp):
 
     
 def run_demo():
-    # from server import run_standalone_server
-    # from server import run
+    """
+    Runs the demo application using the OxiApp framework.
+    This function clears the terminal, starts the demo application, and handles keyboard interrupts gracefully."""
     import subprocess
     subprocess.run("clear")
-
     try:
         # run(minidemoapp, "0.0.0.0", 8086)
         subprocess.run(["python3", "server.py", "apps.demo:app"])
