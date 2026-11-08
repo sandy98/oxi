@@ -22,12 +22,16 @@ It's not just another ASGI framework. It's a **unified server** that serves stat
 
 quickstart
 architecture
+```
 
+```{toctree}
 :maxdepth: 2
 :caption: The Framework
 
 oxiapp
+```
 
+```{toctree}
 :maxdepth: 2
 :caption: API Reference
 
