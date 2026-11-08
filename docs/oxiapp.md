@@ -31,4 +31,14 @@ async def create_user():
     return {"status": "User created"}
 ```
 
+Dynamic URLs & Path Parameters
+------------------------------
 
+You can define dynamic segments in your routes using angle brackets `<>`. OxiApp will automatically extract them and pass them to your function as arguments.
+
+```python
+@app.get("/hello/<name:str>")
+@app.get("/hello")
+async def hello(name: str = "Stranger"):
+    return f"<b>Hello {name}!</b>"
+```
