@@ -1,5 +1,12 @@
+# API Reference
 
+This section contains the automatically generated API documentation for the OxiServer framework. It is built directly from the Python docstrings in the `oxi` package.
 
-# API Docs
-
-Coming soon: Oxi API docs
+OxiApp
+------
+```{eval-rst}
+.. autoclass:: oxi.app.OxiApp
+   :members:
+   :undoc-members:
+   :show-inheritance:
+```
