@@ -10,3 +10,21 @@ OxiApp
    :undoc-members:
    :show-inheritance:
 ```
+
+OxiServer
+---------
+```{eval-rst}
+.. autoclass:: oxi.server
+   :members:
+   :undoc-members:
+   :show-inheritance:
+```
+
+Oxi Static
+----------
+```{eval-rst}
+.. autoclass:: oxi.static
+   :members:
+   :undoc-members:
+   :show-inheritance:
+```
