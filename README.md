@@ -2,10 +2,10 @@
   <img src="https://raw.githubusercontent.com/sandy98/oxi/main/oxi/apps/static/img/oxi_1_rounded.jpg" alt="Oxi Logo" width="125px" />
 </p>
 
-# 🌍 Oxi: The evolution of the web
+## 🌍 Oxi: The evolution of the web
 
-## 🚀 OxiServer: The Polyglot Python Web Engine
-## 🚀 OxiApp: The post-modern ASGI framework
+### 🚀 OxiServer: The Polyglot Python Web Engine
+### 🚀 OxiApp: The post-modern ASGI framework
 
 > **Write Python once. Deploy it anywhere. At full speed.**
 
