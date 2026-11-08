@@ -89,6 +89,7 @@ oxiserver app:app --julia
 
 ## 6. Next steps
 
-*   Read the **[Architecture](architecture.md)** guide to understand how the C++ and Python engines communicate.
+*   Read the {doc}`Architecture Guide <architecture>` to understand how the C++ and Python engines communicate.
     
-*   Learn how to use **[OxiApp](oxiapp.md)** framework for routing http/websocket/sse requests, session handling, lifespan hooks, and mounting ASGI/WSGI apps, among a ton of out of the box built-in goodies.
+*   Learn how to use the {doc}`OxiApp Framework <oxiapp>` for routing http/websocket/sse requests, session handling, lifespan hooks, and mounting ASGI/WSGI apps, among a ton of out of the box built-in goodies.
+

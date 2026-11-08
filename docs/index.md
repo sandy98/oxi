@@ -1,4 +1,4 @@
-# Welcome to OxiServer
+# Welcome to Oxi
 
 **Write Python once. Deploy it anywhere. At full speed.**
 
