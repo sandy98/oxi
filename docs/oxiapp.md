@@ -130,7 +130,7 @@ def main():
 if __name__ == '__main__':
     main()
 ```
-Now, when a user visits `/admin`, the request is seamlessly routed to the Flask app, while everything else is handled by OxiApp.
+Now, when a user visits `/flash_greeting`, the request is seamlessly routed to the Flask app, while everything else is handled by OxiApp.
 
 The Next Sub-Application
 -------------------------
